@@ -1,4 +1,14 @@
 import axios from 'axios';
+import {
+  chatInputSchema,
+  chatResponseSchema,
+  deleteResponseSchema,
+  documentDetailsSchema,
+  fileUploadSchema,
+  indexedDocSchema,
+  indexStatusSchema,
+  ingestResponseSchema,
+} from '../schemas/api';
 import type { IndexedDoc, IndexStatus, RagSource } from '../types/chat';
 
 const API_BASE_URL =
@@ -31,12 +41,35 @@ export interface IngestResponse {
   textLength?: number;
 }
 
+export interface ChatHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ChatOptions {
   signal?: AbortSignal;
   minScore?: number;
   topK?: number;
   allowedDocIds?: string[];
   strictDocs?: boolean;
+  agentic?: boolean;
+  history?: ChatHistoryTurn[];
+}
+
+function buildChatPayload(message: string, options?: ChatOptions) {
+  return {
+    message,
+    ...(options?.minScore !== undefined ? { minScore: options.minScore } : {}),
+    ...(options?.topK !== undefined ? { topK: options.topK } : {}),
+    ...(options?.allowedDocIds && options.allowedDocIds.length > 0
+      ? { allowedDocIds: options.allowedDocIds }
+      : {}),
+    ...(options?.strictDocs !== undefined ? { strictDocs: options.strictDocs } : {}),
+    ...(options?.agentic !== undefined ? { agentic: options.agentic } : {}),
+    ...(options?.history && options.history.length > 0
+      ? { history: options.history }
+      : {}),
+  };
 }
 
 export async function sendChatMessage(
@@ -44,19 +77,16 @@ export async function sendChatMessage(
   options?: ChatOptions
 ): Promise<ChatResponse> {
   try {
-    const { data } = await apiClient.post<ChatResponse>('/chat', {
-      message,
-      ...(options?.minScore !== undefined ? { minScore: options.minScore } : {}),
-      ...(options?.topK !== undefined ? { topK: options.topK } : {}),
-      ...(options?.allowedDocIds && options.allowedDocIds.length > 0
-        ? { allowedDocIds: options.allowedDocIds }
-        : {}),
-      ...(options?.strictDocs !== undefined ? { strictDocs: options.strictDocs } : {}),
-    });
+    chatInputSchema.parse(message);
+    const { data } = await apiClient.post<unknown>(
+      '/chat',
+      buildChatPayload(message, options)
+    );
+    const validated = chatResponseSchema.parse(data);
     return {
-      reply: data.reply,
-      sources: Array.isArray(data.sources) ? data.sources : undefined,
-      grounded: data.grounded,
+      reply: validated.reply,
+      sources: Array.isArray(validated.sources) ? validated.sources : undefined,
+      grounded: validated.grounded,
     };
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Failed to reach the backend.'), {
@@ -66,6 +96,7 @@ export async function sendChatMessage(
 }
 
 export interface StreamChatHandlers {
+  onTool?: (tool: { name: string; args?: Record<string, unknown> }) => void;
   onSources?: (sources: RagSource[], grounded: boolean) => void;
   onDelta: (text: string) => void;
   onDone?: () => void;
@@ -76,18 +107,11 @@ export async function streamChatMessage(
   handlers: StreamChatHandlers,
   options?: ChatOptions
 ): Promise<void> {
+  chatInputSchema.parse(message);
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      ...(options?.minScore !== undefined ? { minScore: options.minScore } : {}),
-      ...(options?.topK !== undefined ? { topK: options.topK } : {}),
-      ...(options?.allowedDocIds && options.allowedDocIds.length > 0
-        ? { allowedDocIds: options.allowedDocIds }
-        : {}),
-      ...(options?.strictDocs !== undefined ? { strictDocs: options.strictDocs } : {}),
-    }),
+    body: JSON.stringify(buildChatPayload(message, options)),
     signal: options?.signal,
   });
 
@@ -122,7 +146,14 @@ export async function streamChatMessage(
     if (dataLines.length === 0) return;
     const payload = JSON.parse(dataLines.join('\n')) as Record<string, unknown>;
 
-    if (eventName === 'sources') {
+    if (eventName === 'tool') {
+      const name = typeof payload.name === 'string' ? payload.name : 'tool';
+      const args =
+        payload.args && typeof payload.args === 'object'
+          ? (payload.args as Record<string, unknown>)
+          : undefined;
+      handlers.onTool?.({ name, args });
+    } else if (eventName === 'sources') {
       const sources = Array.isArray(payload.sources)
         ? (payload.sources as RagSource[])
         : [];
@@ -166,13 +197,13 @@ export async function ingestDocument(
   title?: string
 ): Promise<IngestResponse> {
   try {
-    const { data } = await apiClient.post<IngestResponse>('/ingest', {
+    const { data } = await apiClient.post<unknown>('/ingest', {
       id,
       text,
       title,
       metadata: title ? { title } : {},
     });
-    return data;
+    return ingestResponseSchema.parse(data);
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Document ingestion failed.'), {
       cause: err,
@@ -185,17 +216,18 @@ export async function ingestFile(
   title?: string
 ): Promise<IngestResponse> {
   try {
+    fileUploadSchema.parse({ name: file.name, size: file.size });
     const formData = new FormData();
     formData.append('file', file);
     if (title?.trim()) {
       formData.append('title', title.trim());
     }
 
-    const { data } = await apiClient.post<IngestResponse>(
+    const { data } = await apiClient.post<unknown>(
       '/ingest/file',
       formData
     );
-    return data;
+    return ingestResponseSchema.parse(data);
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'File upload failed.'), {
       cause: err,
@@ -205,16 +237,13 @@ export async function ingestFile(
 
 export async function getBackendStatus(): Promise<IndexStatus> {
   try {
-    const { data } = await apiClient.get<{
-      status: string;
-      index: string;
-      stats?: { dimension?: number; totalRecordCount?: number };
-    }>('/status');
+    const { data } = await apiClient.get<unknown>('/status');
+    const validated = indexStatusSchema.parse(data);
     return {
-      status: data.status,
-      index: data.index,
-      dimension: data.stats?.dimension,
-      totalRecordCount: data.stats?.totalRecordCount,
+      status: validated.status,
+      index: validated.index,
+      dimension: validated.stats?.dimension,
+      totalRecordCount: validated.stats?.totalRecordCount,
     };
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Failed to fetch index status.'), {
@@ -226,10 +255,11 @@ export async function getBackendStatus(): Promise<IndexStatus> {
 export async function fetchDocuments(): Promise<IndexedDoc[]> {
   try {
     const { data } = await apiClient.get<{
-      ok: boolean;
-      documents: IndexedDoc[];
+      ok?: boolean;
+      documents?: unknown;
     }>('/documents');
-    return data.documents || [];
+    const docs = Array.isArray(data.documents) ? data.documents : [];
+    return docs.map((d) => indexedDocSchema.parse(d));
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Failed to fetch documents.'), {
       cause: err,
@@ -259,10 +289,11 @@ export async function fetchDocumentById(
 ): Promise<DocumentDetails | null> {
   try {
     const { data } = await apiClient.get<{
-      ok: boolean;
-      document: DocumentDetails;
+      ok?: boolean;
+      document?: unknown;
     }>(`/documents/${encodeURIComponent(id)}`);
-    return data.document || null;
+    if (!data.document) return null;
+    return documentDetailsSchema.parse(data.document) as DocumentDetails;
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Failed to fetch document.'), {
       cause: err,
@@ -281,10 +312,16 @@ export async function deleteDocumentById(
   id: string
 ): Promise<DeleteDocumentResponse> {
   try {
-    const { data } = await apiClient.delete<DeleteDocumentResponse>(
+    const { data } = await apiClient.delete<unknown>(
       `/documents/${encodeURIComponent(id)}`
     );
-    return data;
+    const validated = deleteResponseSchema.parse(data);
+    return {
+      ok: validated.ok,
+      id: validated.id,
+      deletedChunksCount: validated.deletedChunksCount,
+      fileDeleted: Boolean(validated.fileDeleted),
+    };
   } catch (err) {
     throw new Error(extractErrorMessage(err, 'Failed to delete document.'), {
       cause: err,

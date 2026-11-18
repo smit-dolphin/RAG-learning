@@ -6,6 +6,7 @@ const ingestRoutes = require('./routes/ingest.routes');
 const chatRoutes = require('./routes/chat.routes');
 const statusRoutes = require('./routes/status.routes');
 const documentsRoutes = require('./routes/documents.routes');
+const sfxRoutes = require('./routes/sfx.routes');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ app.use(ingestRoutes);
 app.use(chatRoutes);
 app.use(statusRoutes);
 app.use(documentsRoutes);
+app.use(sfxRoutes);
 
 app.listen(port, () => {
   console.log(`Backend server running on http://localhost:${port}`);

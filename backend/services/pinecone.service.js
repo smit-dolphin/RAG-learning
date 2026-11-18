@@ -75,18 +75,26 @@ const parsedMinScore = Number(process.env.RAG_MIN_SCORE);
 const DEFAULT_MIN_SCORE =
   Number.isFinite(parsedMinScore) && parsedMinScore >= 0 && parsedMinScore <= 1
     ? parsedMinScore
-    : 0.35;
+    : 0.45;
 
 /**
- * Filter and sort similarity matches above the minimum cosine score threshold.
+ * Filter and sort similarity matches above minScore, dropping tangential chunks far below the top match.
  */
 function filterByMinScore(matches, minScore) {
   const threshold =
     typeof minScore === 'number' && Number.isFinite(minScore) ? minScore : 0;
 
-  return matches
+  const passing = matches
     .filter((m) => m.score >= threshold)
     .sort((a, b) => b.score - a.score);
+
+  if (passing.length <= 1) {
+    return passing;
+  }
+
+  const topScore = passing[0].score;
+  const relativeFloor = topScore * 0.8;
+  return passing.filter((m) => m.score >= relativeFloor);
 }
 
 /**

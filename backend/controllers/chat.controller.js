@@ -4,6 +4,7 @@ const {
   generateEmbedding,
 } = require('../services/gemini.service');
 const { searchSimilar } = require('../services/pinecone.service');
+const { runAgentChat } = require('../services/agent.service');
 
 /**
  * Parse an optional bounded numeric parameter.
@@ -61,9 +62,16 @@ async function buildGroundedPrompt(
       .filter((b) => b.length > 0);
 
     if (contextBlocks.length > 0) {
+      const groundingRules = [
+        'Only use information from the provided Context below. Do NOT add external knowledge, assumptions, or unmentioned concepts.',
+        'Be concise and proportional to what the Context supports—do not over-expand.',
+        'Cite every claim inline using the exact source label, e.g. (source: google-seo.md-40).',
+        'If a chunk includes a relevant URL, preserve and link that exact URL in your answer.',
+      ].join('\n- ');
+
       const instruction = requireDocs
-        ? 'You are a strict document-grounded assistant. Answer ONLY using the provided Context below. Do NOT use outside knowledge or assumptions. If the answer cannot be deduced from the Context, reply that the provided documents do not contain that information.'
-        : 'You are an AI assistant grounded on domain knowledge. Answer the question accurately using the provided context. If the answer cannot be deduced from the context, state that clearly before providing general assistance.';
+        ? `You are a strict document-grounded assistant.\n- ${groundingRules}\n- If the Context does not contain the answer, reply that the provided documents do not contain that information.`
+        : `You are an AI assistant grounded on domain knowledge.\n- ${groundingRules}\n- If the Context does not contain the answer, state that clearly before providing brief general assistance.`;
 
       prompt = `${instruction}
 
@@ -113,7 +121,11 @@ function parseChatParams(req) {
   );
   const rawStrict = req.body?.strictDocs ?? req.query?.strictDocs;
   const strictDocs = rawStrict === true || rawStrict === 'true';
-  return { message, minScore, topK, allowedDocIds, strictDocs };
+  const rawAgentic = req.body?.agentic ?? req.query?.agentic;
+  const mode = typeof req.body?.mode === 'string' ? req.body.mode : typeof req.query?.mode === 'string' ? req.query.mode : 'rag';
+  const agentic = rawAgentic === true || rawAgentic === 'true' || mode === 'sfx';
+  const history = Array.isArray(req.body?.history) ? req.body.history : [];
+  return { message, minScore, topK, allowedDocIds, strictDocs, agentic, history, mode };
 }
 
 /**
@@ -130,10 +142,38 @@ function sendSseEvent(res, event, data) {
  */
 async function handleChat(req, res) {
   try {
-    const { message, minScore, topK, allowedDocIds, strictDocs } =
-      parseChatParams(req);
+    const {
+      message,
+      minScore,
+      topK,
+      allowedDocIds,
+      strictDocs,
+      agentic,
+      history,
+      mode,
+    } = parseChatParams(req);
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message is required' });
+    }
+
+    if (agentic) {
+      const result = await runAgentChat({
+        message,
+        history,
+        allowedDocIds,
+        strictDocs,
+        minScore,
+        mode,
+      });
+
+      return res.json({
+        reply: result.reply,
+        sources: result.sources,
+        grounded: result.grounded,
+        agentic: true,
+        steps: result.steps,
+        toolExecutions: result.toolExecutions || [],
+      });
     }
 
     const { prompt, sources, grounded, refusal } = await buildGroundedPrompt(
@@ -163,8 +203,16 @@ async function handleChat(req, res) {
  * GET / POST /chat/stream — Stream Gemini tokens via Server-Sent Events (SSE).
  */
 async function handleChatStream(req, res) {
-  const { message, minScore, topK, allowedDocIds, strictDocs } =
-    parseChatParams(req);
+  const {
+    message,
+    minScore,
+    topK,
+    allowedDocIds,
+    strictDocs,
+    agentic,
+    history,
+    mode,
+  } = parseChatParams(req);
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'message is required' });
   }
@@ -183,6 +231,32 @@ async function handleChatStream(req, res) {
   res.flushHeaders();
 
   try {
+    if (agentic) {
+      const result = await runAgentChat({
+        message,
+        history,
+        allowedDocIds,
+        strictDocs,
+        minScore,
+        mode,
+        shouldAbort: () => clientClosed,
+        onTool: (toolCall) => sendSseEvent(res, 'tool', toolCall),
+        onToolResult: (toolResult) => sendSseEvent(res, 'tool_result', toolResult),
+        onSources: (sources, grounded) =>
+          sendSseEvent(res, 'sources', { sources, grounded }),
+        onDelta: (text) => sendSseEvent(res, 'delta', { text }),
+      });
+
+      if (!clientClosed) {
+        sendSseEvent(res, 'done', {
+          grounded: result.grounded,
+          agentic: true,
+          toolExecutions: result.toolExecutions || [],
+        });
+      }
+      return res.end();
+    }
+
     const { prompt, sources, grounded, refusal } = await buildGroundedPrompt(
       message,
       {

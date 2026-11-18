@@ -20,6 +20,13 @@ interface IngestFeedback {
   text: string;
 }
 
+export interface DocToDelete {
+  id: string;
+  title: string;
+  chunksCount?: number;
+  originalname?: string | null;
+}
+
 interface RagState {
   theme: ThemeId;
   sidebarOpen: boolean;
@@ -31,20 +38,25 @@ interface RagState {
   expandedSources: Record<string, boolean>;
   isIngesting: boolean;
   deletingDocId: string | null;
+  docToDelete: DocToDelete | null;
   ingestFeedback: IngestFeedback | null;
   indexedDocs: IndexedDoc[];
   indexStatus: IndexStatus | null;
   selectedDocIds: string[];
   strictDocs: boolean;
+  agenticMode: boolean;
+  activeToolStatus: string | null;
 
   setTheme: (theme: ThemeId) => void;
   setSidebarOpen: (open: boolean) => void;
   setActiveView: (view: WorkspaceView, docId?: string | null) => void;
+  setDocToDelete: (doc: DocToDelete | null) => void;
   setSelectedDocIds: (ids: string[]) => void;
   toggleDocSelection: (id: string) => void;
   clearDocSelection: () => void;
   setStrictDocs: (strict: boolean) => void;
-  createNewChat: () => void;
+  setAgenticMode: (enabled: boolean) => void;
+  createNewChat: () => string;
   selectSession: (id: string) => void;
   togglePinSession: (id: string) => void;
   deleteSession: (id: string) => void;
@@ -132,11 +144,14 @@ export const useRagStore = create<RagState>((set, get) => ({
   expandedSources: {},
   isIngesting: false,
   deletingDocId: null,
+  docToDelete: null,
   ingestFeedback: null,
   indexedDocs: [],
   indexStatus: null,
   selectedDocIds: [],
   strictDocs: false,
+  agenticMode: true,
+  activeToolStatus: null,
 
   setTheme: (theme: ThemeId) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -148,6 +163,8 @@ export const useRagStore = create<RagState>((set, get) => ({
 
   setActiveView: (view, docId = null) =>
     set({ activeView: view, selectedDocId: docId }),
+
+  setDocToDelete: (doc) => set({ docToDelete: doc }),
 
   setSelectedDocIds: (ids) => set({ selectedDocIds: ids }),
 
@@ -162,17 +179,20 @@ export const useRagStore = create<RagState>((set, get) => ({
 
   setStrictDocs: (strict) => set({ strictDocs: strict }),
 
+  setAgenticMode: (enabled) => set({ agenticMode: enabled }),
+
   createNewChat: () => {
     const { sessions, activeSessionId } = get();
     const active = sessions.find((s) => s.id === activeSessionId);
     if (active && active.messages.length === 0) {
       set({ activeView: 'chat' });
-      return;
+      return active.id;
     }
     const fresh = createEmptySession();
     const next = [fresh, ...sessions];
     persistSessions(next);
     set({ sessions: next, activeSessionId: fresh.id, activeView: 'chat' });
+    return fresh.id;
   },
 
   selectSession: (id) => set({ activeSessionId: id, activeView: 'chat' }),
@@ -299,13 +319,37 @@ export const useRagStore = create<RagState>((set, get) => ({
       }));
     };
 
+    const previousMessages =
+      get()
+        .sessions.find((s) => s.id === targetSessionId)
+        ?.messages.filter((m) => !m.isError && m.content.trim().length > 0)
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content })) || [];
+
     const selectedDocIds = get().selectedDocIds;
     const strictDocs = get().strictDocs;
+    const agenticMode = get().agenticMode;
+
+    set({ activeToolStatus: null });
 
     try {
       await streamChatMessage(
         trimmed,
         {
+          onTool: ({ name, args }) => {
+            let statusText = `Running ${name}...`;
+            if (name === 'search_knowledge_base') {
+              const q = typeof args?.query === 'string' ? args.query : '';
+              statusText = q
+                ? `Searching knowledge base: "${q}"`
+                : 'Searching knowledge base...';
+            } else if (name === 'list_documents') {
+              statusText = 'Listing indexed documents...';
+            } else if (name === 'get_document_details') {
+              statusText = 'Reading full document...';
+            }
+            set({ activeToolStatus: statusText });
+          },
           onSources: (sources) => {
             updateAiMessage((m) => ({ ...m, sources }));
             if (sources.length > 0) {
@@ -315,6 +359,9 @@ export const useRagStore = create<RagState>((set, get) => ({
             }
           },
           onDelta: (delta) => {
+            if (get().activeToolStatus) {
+              set({ activeToolStatus: null });
+            }
             updateAiMessage((m) => ({
               ...m,
               content: m.content + delta,
@@ -325,6 +372,8 @@ export const useRagStore = create<RagState>((set, get) => ({
           signal: controller.signal,
           ...(selectedDocIds.length > 0 ? { allowedDocIds: selectedDocIds } : {}),
           strictDocs: strictDocs || selectedDocIds.length > 0,
+          agentic: agenticMode,
+          history: agenticMode ? previousMessages : undefined,
         }
       );
     } catch (err) {
@@ -348,7 +397,7 @@ export const useRagStore = create<RagState>((set, get) => ({
     } finally {
       activeStreamController = null;
       persistSessions(get().sessions);
-      set({ isSending: false });
+      set({ isSending: false, activeToolStatus: null });
     }
   },
 
@@ -401,6 +450,7 @@ export const useRagStore = create<RagState>((set, get) => ({
         indexedDocs: state.indexedDocs.filter((d) => d.id !== id),
         selectedDocIds: state.selectedDocIds.filter((docId) => docId !== id),
         selectedDocId: state.selectedDocId === id ? null : state.selectedDocId,
+        docToDelete: null,
         activeView:
           state.selectedDocId === id && state.activeView === 'document'
             ? 'library'
