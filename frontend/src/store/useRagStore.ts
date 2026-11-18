@@ -34,10 +34,16 @@ interface RagState {
   ingestFeedback: IngestFeedback | null;
   indexedDocs: IndexedDoc[];
   indexStatus: IndexStatus | null;
+  selectedDocIds: string[];
+  strictDocs: boolean;
 
   setTheme: (theme: ThemeId) => void;
   setSidebarOpen: (open: boolean) => void;
   setActiveView: (view: WorkspaceView, docId?: string | null) => void;
+  setSelectedDocIds: (ids: string[]) => void;
+  toggleDocSelection: (id: string) => void;
+  clearDocSelection: () => void;
+  setStrictDocs: (strict: boolean) => void;
   createNewChat: () => void;
   selectSession: (id: string) => void;
   togglePinSession: (id: string) => void;
@@ -129,6 +135,8 @@ export const useRagStore = create<RagState>((set, get) => ({
   ingestFeedback: null,
   indexedDocs: [],
   indexStatus: null,
+  selectedDocIds: [],
+  strictDocs: false,
 
   setTheme: (theme: ThemeId) => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -140,6 +148,19 @@ export const useRagStore = create<RagState>((set, get) => ({
 
   setActiveView: (view, docId = null) =>
     set({ activeView: view, selectedDocId: docId }),
+
+  setSelectedDocIds: (ids) => set({ selectedDocIds: ids }),
+
+  toggleDocSelection: (id) =>
+    set((state) => ({
+      selectedDocIds: state.selectedDocIds.includes(id)
+        ? state.selectedDocIds.filter((docId) => docId !== id)
+        : [...state.selectedDocIds, id],
+    })),
+
+  clearDocSelection: () => set({ selectedDocIds: [] }),
+
+  setStrictDocs: (strict) => set({ strictDocs: strict }),
 
   createNewChat: () => {
     const { sessions, activeSessionId } = get();
@@ -278,6 +299,9 @@ export const useRagStore = create<RagState>((set, get) => ({
       }));
     };
 
+    const selectedDocIds = get().selectedDocIds;
+    const strictDocs = get().strictDocs;
+
     try {
       await streamChatMessage(
         trimmed,
@@ -297,7 +321,11 @@ export const useRagStore = create<RagState>((set, get) => ({
             }));
           },
         },
-        { signal: controller.signal }
+        {
+          signal: controller.signal,
+          ...(selectedDocIds.length > 0 ? { allowedDocIds: selectedDocIds } : {}),
+          strictDocs: strictDocs || selectedDocIds.length > 0,
+        }
       );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -371,6 +399,7 @@ export const useRagStore = create<RagState>((set, get) => ({
       const res = await deleteDocumentById(id);
       set((state) => ({
         indexedDocs: state.indexedDocs.filter((d) => d.id !== id),
+        selectedDocIds: state.selectedDocIds.filter((docId) => docId !== id),
         selectedDocId: state.selectedDocId === id ? null : state.selectedDocId,
         activeView:
           state.selectedDocId === id && state.activeView === 'document'

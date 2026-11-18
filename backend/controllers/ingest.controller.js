@@ -23,7 +23,7 @@ async function ingestText({ id, text, title, metadata = {} }) {
       values,
       title: chunkTitle,
       text: chunk,
-      metadata: { ...metadata, title: chunkTitle },
+      metadata: { ...metadata, docId: id, title: chunkTitle },
     });
   }
 

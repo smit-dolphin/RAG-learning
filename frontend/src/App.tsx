@@ -16,6 +16,7 @@ import {
   IconCopy,
   IconDatabase,
   IconFileText,
+  IconFilter,
   IconLayers,
   IconLibrary,
   IconPin,
@@ -53,9 +54,15 @@ function App() {
     ingestFeedback,
     indexedDocs,
     indexStatus,
+    selectedDocIds,
+    strictDocs,
     setTheme,
     setSidebarOpen,
     setActiveView,
+    setSelectedDocIds,
+    toggleDocSelection,
+    clearDocSelection,
+    setStrictDocs,
     createNewChat,
     selectSession,
     togglePinSession,
@@ -75,6 +82,8 @@ function App() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const [scopeSearchQuery, setScopeSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [docToDelete, setDocToDelete] = useState<{
@@ -187,6 +196,8 @@ function App() {
       if (e.key === 'Escape') {
         if (docToDelete) {
           setDocToDelete(null);
+        } else if (scopeMenuOpen) {
+          setScopeMenuOpen(false);
         } else if (userMenuOpen) {
           setUserMenuOpen(false);
         }
@@ -194,7 +205,7 @@ function App() {
     }
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [docToDelete, userMenuOpen]);
+  }, [docToDelete, scopeMenuOpen, userMenuOpen]);
 
   // Filter sessions by search query
   const filteredSessions = sessions.filter((s) =>
@@ -856,6 +867,202 @@ function App() {
             {/* Floating Composer Area */}
             <footer className="composer-dock">
               <div className="composer-shell">
+                {/* Knowledge Scope Filter Bar */}
+                <div className="composer-scope-bar">
+                  <div className="scope-popover-wrapper">
+                    <button
+                      type="button"
+                      className={`scope-pill-btn ${selectedDocIds.length > 0 ? 'active' : ''}`}
+                      onClick={() => setScopeMenuOpen((prev) => !prev)}
+                      aria-expanded={scopeMenuOpen}
+                      aria-haspopup="dialog"
+                      title="Manage knowledge documents scope"
+                    >
+                      <IconFilter />
+                      <span className="scope-pill-label">
+                        {selectedDocIds.length === 0
+                          ? `All Knowledge (${indexedDocs.length})`
+                          : selectedDocIds.length === 1
+                          ? (indexedDocs.find((d) => d.id === selectedDocIds[0])?.title || '1 Document')
+                          : `${selectedDocIds.length} Docs Scoped`}
+                      </span>
+                      <IconChevronDown
+                        className={`scope-chevron ${scopeMenuOpen ? 'open' : ''}`}
+                      />
+                    </button>
+
+                    {scopeMenuOpen && (
+                      <>
+                        <div
+                          className="scope-popover-backdrop"
+                          onClick={() => setScopeMenuOpen(false)}
+                          aria-hidden="true"
+                        />
+                        <div
+                          className="scope-popover-menu"
+                          role="dialog"
+                          aria-label="Knowledge Scope Selector"
+                        >
+                          <div className="scope-popover-header">
+                            <div>
+                              <div className="scope-popover-title">Knowledge Scope</div>
+                              <div className="scope-popover-sub">
+                                {selectedDocIds.length === 0
+                                  ? 'Searching all indexed documents'
+                                  : `Restricted to ${selectedDocIds.length} document${selectedDocIds.length === 1 ? '' : 's'}`}
+                              </div>
+                            </div>
+                            <div className="scope-popover-actions">
+                              {selectedDocIds.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className="scope-action-link"
+                                  onClick={() => clearDocSelection()}
+                                >
+                                  Reset to All
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="scope-action-link"
+                                  onClick={() =>
+                                    setSelectedDocIds(indexedDocs.map((d) => d.id))
+                                  }
+                                  disabled={indexedDocs.length === 0}
+                                >
+                                  Select All
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {indexedDocs.length > 4 && (
+                            <div className="scope-search-box">
+                              <IconSearch />
+                              <input
+                                type="text"
+                                placeholder="Filter documents..."
+                                value={scopeSearchQuery}
+                                onChange={(e) => setScopeSearchQuery(e.target.value)}
+                              />
+                            </div>
+                          )}
+
+                          <div className="scope-docs-list">
+                            <button
+                              type="button"
+                              className={`scope-doc-item ${selectedDocIds.length === 0 ? 'selected' : ''}`}
+                              onClick={() => {
+                                clearDocSelection();
+                                setScopeMenuOpen(false);
+                              }}
+                            >
+                              <div className="scope-doc-checkbox">
+                                {selectedDocIds.length === 0 && <IconCheck />}
+                              </div>
+                              <div className="scope-doc-info">
+                                <span className="scope-doc-name">
+                                  All Documents (Global)
+                                </span>
+                                <span className="scope-doc-meta">
+                                  Query entire Pinecone index ({indexedDocs.length} docs)
+                                </span>
+                              </div>
+                            </button>
+
+                            <div className="scope-list-divider" />
+
+                            {indexedDocs.length === 0 ? (
+                              <div className="scope-empty-text">
+                                No indexed documents found. Upload files in Library.
+                              </div>
+                            ) : (
+                              indexedDocs
+                                .filter((d) =>
+                                  d.title
+                                    .toLowerCase()
+                                    .includes(scopeSearchQuery.toLowerCase().trim())
+                                )
+                                .map((d) => {
+                                  const isChecked = selectedDocIds.includes(d.id);
+                                  return (
+                                    <button
+                                      key={d.id}
+                                      type="button"
+                                      className={`scope-doc-item ${isChecked ? 'selected' : ''}`}
+                                      onClick={() => toggleDocSelection(d.id)}
+                                    >
+                                      <div className="scope-doc-checkbox">
+                                        {isChecked && <IconCheck />}
+                                      </div>
+                                      <div className="scope-doc-info">
+                                        <span className="scope-doc-name">
+                                          {d.title}
+                                        </span>
+                                        <span className="scope-doc-meta">
+                                          {d.chunksCount ?? 1} chunks •{' '}
+                                          {d.originalname || d.id}
+                                        </span>
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                            )}
+                          </div>
+
+                          <div className="scope-popover-footer">
+                            <label className="scope-strict-toggle">
+                              <input
+                                type="checkbox"
+                                checked={strictDocs}
+                                onChange={(e) => setStrictDocs(e.target.checked)}
+                              />
+                              <span className="strict-toggle-text">
+                                <strong>Strict Docs Only</strong>
+                                <small>Refuse answer if not in context</small>
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Active chips row */}
+                  {selectedDocIds.length > 0 && (
+                    <div className="active-scope-chips">
+                      {selectedDocIds.map((id) => {
+                        const doc = indexedDocs.find((d) => d.id === id);
+                        return (
+                          <span key={id} className="scope-chip">
+                            <span
+                              className="scope-chip-title"
+                              title={doc?.title || id}
+                            >
+                              {doc?.title || id}
+                            </span>
+                            <button
+                              type="button"
+                              className="scope-chip-close"
+                              onClick={() => toggleDocSelection(id)}
+                              aria-label={`Remove ${doc?.title || id} from scope`}
+                            >
+                              <IconX />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="scope-chip-clear-all"
+                        onClick={clearDocSelection}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <form className="composer-box" onSubmit={handleChatSubmit}>
                   <label htmlFor="agent-chat-input" className="sr-only">
                     Ask VectorMind
@@ -1025,13 +1232,31 @@ function App() {
                         <span className="library-doc-meta">
                           {doc.originalname || doc.id}
                         </span>
-                        <button
-                          type="button"
-                          className="inspect-doc-btn"
-                          onClick={() => void inspectDocument(doc.id)}
-                        >
-                          Inspect Chunks →
-                        </button>
+                        <div className="library-doc-footer-actions">
+                          <button
+                            type="button"
+                            className={`doc-chat-filter-btn ${selectedDocIds.includes(doc.id) ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedDocIds([doc.id]);
+                              setActiveView('chat');
+                            }}
+                            title="Chat with only this document"
+                          >
+                            <IconFilter />
+                            <span>
+                              {selectedDocIds.includes(doc.id)
+                                ? 'Scoped'
+                                : 'Chat'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="inspect-doc-btn"
+                            onClick={() => void inspectDocument(doc.id)}
+                          >
+                            Inspect Chunks →
+                          </button>
+                        </div>
                       </div>
                     </article>
                   ))}
@@ -1056,22 +1281,36 @@ function App() {
                     <span>Back to Library</span>
                   </button>
                   {activeDocDetails && (
-                    <button
-                      type="button"
-                      className="btn-ghost doc-inspector-delete-btn"
-                      onClick={() =>
-                        setDocToDelete({
-                          id: activeDocDetails.id,
-                          title: activeDocDetails.title,
-                          chunksCount: activeDocDetails.chunksCount,
-                          originalname: activeDocDetails.filename,
-                        })
-                      }
-                      disabled={deletingDocId === activeDocDetails.id}
-                    >
-                      <IconTrash />
-                      <span>Delete Document</span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="btn-ghost doc-inspector-chat-btn"
+                        onClick={() => {
+                          setSelectedDocIds([activeDocDetails.id]);
+                          setActiveView('chat');
+                        }}
+                        title="Focus chat on this document only"
+                      >
+                        <IconFilter />
+                        <span>Chat with this doc</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost doc-inspector-delete-btn"
+                        onClick={() =>
+                          setDocToDelete({
+                            id: activeDocDetails.id,
+                            title: activeDocDetails.title,
+                            chunksCount: activeDocDetails.chunksCount,
+                            originalname: activeDocDetails.filename,
+                          })
+                        }
+                        disabled={deletingDocId === activeDocDetails.id}
+                      >
+                        <IconTrash />
+                        <span>Delete Document</span>
+                      </button>
+                    </>
                   )}
                 </div>
                 <div className="inspector-title-group">

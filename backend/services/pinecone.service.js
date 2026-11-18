@@ -89,16 +89,17 @@ function filterByMinScore(matches, minScore) {
     .sort((a, b) => b.score - a.score);
 }
 
-async function searchSimilar({
-  vector,
-  topK = 5,
-  namespace,
-  minScore = DEFAULT_MIN_SCORE,
-}) {
-  if (!Array.isArray(vector) || vector.length === 0) {
-    throw new Error('Vector array is required for similarity search');
-  }
+/**
+ * Extract the parent document ID from chunk metadata or chunk ID (`<docId>-<index>`).
+ */
+function getParentDocId(match) {
+  return match.metadata?.docId || String(match.id).replace(/-\d+$/, '');
+}
 
+/**
+ * Execute a raw vector similarity query against Document-Schema or standard Pinecone index.
+ */
+async function runVectorQuery({ vector, topK, namespace, filter }) {
   const docClient = namespace
     ? pineconeIndex.namespace(namespace).documents
     : pineconeIndex.documents;
@@ -115,10 +116,11 @@ async function searchSimilar({
           },
         ],
         topK,
-        includeFields: ['title', 'text'],
+        includeFields: ['title', 'text', 'docId'],
+        ...(filter ? { filter } : {}),
       });
 
-      const mapped = (response.matches || []).map((match) => ({
+      return (response.matches || []).map((match) => ({
         id: match._id || match.id,
         score: match._score ?? match.score ?? 0,
         metadata: {
@@ -127,7 +129,6 @@ async function searchSimilar({
           ...(match.fields || {}),
         },
       }));
-      return filterByMinScore(mapped, minScore);
     } catch (err) {
       // If error is not schema-related, rethrow
       if (!err.message || !err.message.includes('documents')) {
@@ -145,14 +146,55 @@ async function searchSimilar({
     vector,
     topK,
     includeMetadata: true,
+    ...(filter ? { filter } : {}),
   });
 
-  const mapped = (result.matches || []).map((m) => ({
+  return (result.matches || []).map((m) => ({
     id: m.id,
     score: m.score ?? 0,
     metadata: m.metadata || {},
   }));
-  return filterByMinScore(mapped, minScore);
+}
+
+async function searchSimilar({
+  vector,
+  topK = 5,
+  namespace,
+  minScore = DEFAULT_MIN_SCORE,
+  allowedDocIds,
+}) {
+  if (!Array.isArray(vector) || vector.length === 0) {
+    throw new Error('Vector array is required for similarity search');
+  }
+
+  const hasAllowedDocs =
+    Array.isArray(allowedDocIds) && allowedDocIds.length > 0;
+
+  if (hasAllowedDocs) {
+    const allowedSet = new Set(allowedDocIds.map(String));
+    // Prefer native Pinecone metadata filter on `docId`
+    let matches = await runVectorQuery({
+      vector,
+      topK,
+      namespace,
+      filter: { docId: { $in: [...allowedSet] } },
+    });
+
+    // Fallback for legacy chunks ingested before `docId` was stored in metadata
+    if (matches.length === 0) {
+      const candidates = await runVectorQuery({
+        vector,
+        topK: Math.max(topK * 6, 30),
+        namespace,
+      });
+      matches = candidates.filter((m) => allowedSet.has(getParentDocId(m)));
+    }
+
+    return filterByMinScore(matches, minScore).slice(0, topK);
+  }
+
+  const matches = await runVectorQuery({ vector, topK, namespace });
+  return filterByMinScore(matches, minScore);
 }
 
 /**

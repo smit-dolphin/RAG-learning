@@ -31,9 +31,28 @@ export interface IngestResponse {
   textLength?: number;
 }
 
-export async function sendChatMessage(message: string): Promise<ChatResponse> {
+export interface ChatOptions {
+  signal?: AbortSignal;
+  minScore?: number;
+  topK?: number;
+  allowedDocIds?: string[];
+  strictDocs?: boolean;
+}
+
+export async function sendChatMessage(
+  message: string,
+  options?: ChatOptions
+): Promise<ChatResponse> {
   try {
-    const { data } = await apiClient.post<ChatResponse>('/chat', { message });
+    const { data } = await apiClient.post<ChatResponse>('/chat', {
+      message,
+      ...(options?.minScore !== undefined ? { minScore: options.minScore } : {}),
+      ...(options?.topK !== undefined ? { topK: options.topK } : {}),
+      ...(options?.allowedDocIds && options.allowedDocIds.length > 0
+        ? { allowedDocIds: options.allowedDocIds }
+        : {}),
+      ...(options?.strictDocs !== undefined ? { strictDocs: options.strictDocs } : {}),
+    });
     return {
       reply: data.reply,
       sources: Array.isArray(data.sources) ? data.sources : undefined,
@@ -55,7 +74,7 @@ export interface StreamChatHandlers {
 export async function streamChatMessage(
   message: string,
   handlers: StreamChatHandlers,
-  options?: { signal?: AbortSignal; minScore?: number; topK?: number }
+  options?: ChatOptions
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
@@ -64,6 +83,10 @@ export async function streamChatMessage(
       message,
       ...(options?.minScore !== undefined ? { minScore: options.minScore } : {}),
       ...(options?.topK !== undefined ? { topK: options.topK } : {}),
+      ...(options?.allowedDocIds && options.allowedDocIds.length > 0
+        ? { allowedDocIds: options.allowedDocIds }
+        : {}),
+      ...(options?.strictDocs !== undefined ? { strictDocs: options.strictDocs } : {}),
     }),
     signal: options?.signal,
   });
