@@ -2889,5 +2889,246 @@ button {
   background: var(--bg-hover);
 }
 
+/* Pre-Generation Acoustic Planning & Reasoning Drawer */
+.sfx-thought-box {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.sfx-thought-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.sfx-thought-toggle:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sfx-thought-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sfx-thought-title svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent-primary);
+}
+
+.sfx-thought-chevron {
+  width: 13px;
+  height: 13px;
+  transition: transform 150ms ease;
+}
+
+.sfx-thought-chevron.open {
+  transform: rotate(180deg);
+}
+
+.sfx-thought-content {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+/* BGM Step Sequencer Rack */
+.sfx-loop-btn.active {
+  background-color: var(--accent-subtle);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.sfx-bgm-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sfx-bpm-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 3px 7px;
+}
+
+.sfx-bpm-control input {
+  width: 48px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+}
+
+.sfx-bgm-channel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.sfx-bgm-channel-row.muted {
+  opacity: 0.55;
+}
+
+.sfx-bgm-channel-meta {
+  width: 195px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sfx-bgm-channel-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sfx-bgm-channel-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sfx-inst-select {
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px 5px;
+  outline: none;
+}
+
+.sfx-bgm-channel-sub input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.sfx-bgm-steps-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(16, minmax(22px, 1fr));
+  gap: 3px;
+  overflow-x: auto;
+}
+
+.sfx-step-cell {
+  height: 26px;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 100ms ease;
+}
+
+.sfx-step-cell.beat-start {
+  border-left: 2px solid var(--border-hover);
+}
+
+.sfx-step-cell:hover {
+  border-color: var(--accent-primary);
+}
+
+.sfx-step-cell.active {
+  background-color: var(--accent-subtle);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.sfx-step-cell.active.sustain {
+  opacity: 0.65;
+}
+
+.sfx-waveform-badge.orchestra {
+  background-color: var(--accent-subtle);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+}
+
+.sfx-orchestra-track-roll {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sfx-orchestra-roll-bar {
+  position: relative;
+  height: 28px;
+  background-color: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.sfx-orchestra-note-block {
+  position: absolute;
+  top: 4px;
+  height: 18px;
+  background-color: var(--accent-subtle);
+  border: 1px solid var(--accent-primary);
+  border-radius: 3px;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 0 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sfx-orchestra-note-summary {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+
 
 

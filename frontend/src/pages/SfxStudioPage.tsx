@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   IconAudioWave,
+  IconChevronDown,
   IconDownload,
   IconLayers,
   IconPause,
@@ -15,9 +16,18 @@ import {
   IconPlus,
   IconSend,
   IconSliders,
+  IconSpark,
   IconTrash,
   IconVolume2,
 } from '../components/Icons';
+import {
+  OrchestraPlayerController,
+  ORCHESTRA_INSTRUMENT_OPTIONS,
+  computeEffectiveScoreDuration,
+  exportOrchestraWav,
+  type OrchestraScore,
+  type OrchestraTrack,
+} from '../utils/smplrOrchestra';
 
 export interface SfxParams {
   soundName?: string;
@@ -58,10 +68,38 @@ export interface MasterEffects {
   masterFilter: number;
 }
 
+export interface BgmChannel {
+  id: string;
+  name: string;
+  instrument: string;
+  volume: number;
+  pan?: number;
+  muted?: boolean;
+  filterCutoff?: number;
+  distortion?: number;
+  steps: string[];
+}
+
+export interface BgmPreset {
+  id: string;
+  name: string;
+  description: string;
+  bpm: number;
+  key: string;
+  stepCount: number;
+  loops: number;
+  hallReverb?: number;
+  warmth?: number;
+  channels: BgmChannel[];
+  masterEffects?: MasterEffects;
+}
+
 export interface SfxMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  thought?: string;
+  isThoughtOpen?: boolean;
   timestamp: string;
   dataUri?: string;
   params?: SfxParams;
@@ -69,6 +107,16 @@ export interface SfxMessage {
   toolStatus?: string;
   isLayered?: boolean;
   layers?: SfxLayer[];
+  isBgm?: boolean;
+  isAcoustic?: boolean;
+  isRealOrchestra?: boolean;
+  orchestraScore?: OrchestraScore;
+  bpm?: number;
+  musicalKey?: string;
+  stepCount?: number;
+  hallReverb?: number;
+  warmth?: number;
+  bgmChannels?: BgmChannel[];
   masterEffects?: MasterEffects;
 }
 
@@ -161,19 +209,105 @@ const INITIAL_LAYERS: SfxLayer[] = [
   },
 ];
 
-const PROMPT_CHIPS = [
-  'Combine a laser zap attack with a deep sub-bass explosion',
-  'Synthesize a 3-layer legendary treasure chest fanfare',
-  'Create a seismic meteor strike with shockwave & sub-rumble',
-  'Engineer a cyberpunk warp dash with Doppler static',
-  'Design an alien energy shield deflect with metallic shimmer',
+const INITIAL_BGM_CHANNELS: BgmChannel[] = [
+  {
+    id: 'bgm-lead',
+    name: 'Pulse Lead',
+    instrument: 'square',
+    volume: 0.85,
+    filterCutoff: 9000,
+    steps: [
+      'E5', '-', 'G5', '-', 'A5', '~', 'G5', '-', 'E5', '-', 'C5', '-', 'D5', '~', '-', '-',
+      'G5', '-', 'A5', '-', 'C6', '~', 'B5', '-', 'A5', '-', 'G5', '-', 'E5', '~', '-', '-',
+    ],
+  },
+  {
+    id: 'bgm-bass',
+    name: 'Walking Bass',
+    instrument: 'triangle',
+    volume: 0.95,
+    filterCutoff: 2400,
+    steps: [
+      'C3', '-', 'G2', '-', 'C3', '-', 'E3', '-', 'G2', '-', 'D3', '-', 'G2', '-', 'B2', '-',
+      'F2', '-', 'C3', '-', 'F2', '-', 'A2', '-', 'G2', '-', 'D3', '-', 'G2', '-', 'B2', '-',
+    ],
+  },
+  {
+    id: 'bgm-drums',
+    name: 'Chip Percussion',
+    instrument: 'noise',
+    volume: 0.8,
+    steps: [
+      'K', '-', 'H', '-', 'S', '-', 'H', '-', 'K', 'K', 'H', '-', 'S', '-', 'H', '-',
+      'K', '-', 'H', '-', 'S', '-', 'H', '-', 'K', '-', 'H', 'S', 'S', '-', 'K', 'H',
+    ],
+  },
 ];
+
+const PROMPT_CHIPS = [
+  'Compose a melancholic Hollow Knight piano, solo cello & choir theme',
+  'Compose a moonlit piano & bowed strings ballad in A Minor',
+  'Create a dramatic church organ & string ensemble cathedral boss theme',
+  'Compose a 142 BPM cyberpunk boss battle BGM loop',
+  'Synthesize a 3-layer legendary treasure chest fanfare',
+];
+
+const INITIAL_ORCHESTRA_SCORE: OrchestraScore = {
+  songName: 'Hollow Knight — Dirtmouth Elegy',
+  bpm: 76,
+  key: 'D Minor',
+  reverb: 0.52,
+  totalBeats: 16,
+  totalDuration: 12.63,
+  tracks: [
+    {
+      id: 'init-piano',
+      name: 'Splendid Piano',
+      instrument: 'SplendidGrandPiano',
+      volume: 0.85,
+      pan: -0.25,
+      muted: false,
+      notes: [
+        { beat: 0, durationBeats: 2, time: 0, duration: 1.57, note: 'D4', velocity: 74 },
+        { beat: 2, durationBeats: 1, time: 1.57, duration: 0.78, note: 'A4', velocity: 68 },
+        { beat: 3, durationBeats: 1, time: 2.36, duration: 0.78, note: 'F5', velocity: 78 },
+        { beat: 4, durationBeats: 2, time: 3.15, duration: 1.57, note: 'E5', velocity: 74 },
+        { beat: 6, durationBeats: 2, time: 4.73, duration: 1.57, note: 'D5', velocity: 70 },
+        { beat: 8, durationBeats: 2, time: 6.31, duration: 1.57, note: 'Bb3', velocity: 72 },
+        { beat: 10, durationBeats: 1, time: 7.89, duration: 0.78, note: 'F4', velocity: 68 },
+        { beat: 11, durationBeats: 1, time: 8.68, duration: 0.78, note: 'D5', velocity: 76 },
+        { beat: 12, durationBeats: 2, time: 9.47, duration: 1.57, note: 'C#5', velocity: 74 },
+        { beat: 14, durationBeats: 2, time: 11.05, duration: 1.57, note: 'A4', velocity: 68 },
+      ],
+    },
+    {
+      id: 'init-cello',
+      name: 'Solo Cello',
+      instrument: 'cello',
+      volume: 0.9,
+      pan: 0.25,
+      muted: false,
+      notes: [
+        { beat: 0, durationBeats: 4, time: 0, duration: 3.15, note: 'D3', velocity: 76 },
+        { beat: 4, durationBeats: 4, time: 3.15, duration: 3.15, note: 'C3', velocity: 74 },
+        { beat: 8, durationBeats: 4, time: 6.31, duration: 3.15, note: 'Bb2', velocity: 78 },
+        { beat: 12, durationBeats: 4, time: 9.47, duration: 3.15, note: 'A2', velocity: 80 },
+      ],
+    },
+  ],
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function SfxStudioPage() {
-  // Mode: Single Oscillator vs Multi-Layer Stack
-  const [isLayeredMode, setIsLayeredMode] = useState(true);
+  // Mode: Layered SFX Stack vs Single Oscillator vs Chiptune BGM vs Acoustic Instruments vs Real Orchestra
+  const [studioMode, setStudioMode] = useState<'layered' | 'single' | 'bgm' | 'acoustic' | 'orchestra'>('layered');
+  const isLayeredMode = studioMode === 'layered';
+  const isBgmMode = studioMode === 'bgm';
+  const isAcousticMode = studioMode === 'acoustic';
+  const isOrchestraMode = studioMode === 'orchestra';
+  const isMusicMode = isBgmMode || isAcousticMode || isOrchestraMode;
+
   const [layers, setLayers] = useState<SfxLayer[]>(INITIAL_LAYERS);
   const [selectedLayerId, setSelectedLayerId] = useState<string>(INITIAL_LAYERS[0].id);
   const [masterEffects, setMasterEffects] = useState<MasterEffects>({
@@ -181,6 +315,16 @@ export default function SfxStudioPage() {
     masterDistortion: 0.15,
     masterFilter: 16000,
   });
+
+  // BGM & Acoustic Sequencer State
+  const [bgmBpm, setBgmBpm] = useState(132);
+  const [bgmKey, setBgmKey] = useState('C Major');
+  const [bgmStepCount, setBgmStepCount] = useState(32);
+  const [bgmLoops, setBgmLoops] = useState(2);
+  const [bgmChannels, setBgmChannels] = useState<BgmChannel[]>(INITIAL_BGM_CHANNELS);
+  const [hallReverb, setHallReverb] = useState(0.4);
+  const [warmth, setWarmth] = useState(0.2);
+  const [loopPlayback, setLoopPlayback] = useState(true);
 
   const [editorParams, setEditorParams] = useState<SfxParams>(INITIAL_LAYERS[0].params);
   const [compositionTitle, setCompositionTitle] = useState('Sci-Fi Plasma Cannon');
@@ -190,7 +334,20 @@ export default function SfxStudioPage() {
 
   const [presets, setPresets] = useState<Preset[]>([]);
   const [layeredPresets, setLayeredPresets] = useState<LayeredPreset[]>([]);
-  const [presetTab, setPresetTab] = useState<'layered' | 'single'>('layered');
+  const [bgmPresets, setBgmPresets] = useState<BgmPreset[]>([]);
+  const [acousticPresets, setAcousticPresets] = useState<BgmPreset[]>([]);
+  const [orchestraPresets, setOrchestraPresets] = useState<OrchestraScore[]>([]);
+  const [presetTab, setPresetTab] = useState<'layered' | 'orchestra' | 'acoustic' | 'bgm' | 'single'>('layered');
+
+  // Real Sampled Orchestra (smplr) State
+  const [orchestraScore, setOrchestraScore] = useState<OrchestraScore>(INITIAL_ORCHESTRA_SCORE);
+  const [orchestraStatus, setOrchestraStatus] = useState<'idle' | 'loading' | 'playing'>('idle');
+  const [orchestraStatusText, setOrchestraStatusText] = useState<string>('');
+  const [orchestraProgress, setOrchestraProgress] = useState<{ current: number; total: number }>({
+    current: 0,
+    total: 0,
+  });
+  const orchestraPlayerRef = useRef<OrchestraPlayerController | null>(null);
 
   // Agent Chat State
   const [chatInput, setChatInput] = useState('');
@@ -201,7 +358,7 @@ export default function SfxStudioPage() {
       id: 'welcome-sfx',
       role: 'assistant',
       content:
-        'Welcome to **VectorMind Game SFX Studio**! I am your AI sound engineer. I can design single DSP sounds or **combine multiple acoustic layers** (transient attack punch, tonal core body, sub-rumble, and ambient tail) into rich, composite game audio.\n\nDescribe any sound effect or click one of the multi-layer archetypes below to get started!',
+        'Welcome to **VectorMind SFX, BGM & Acoustic Studio**! I can design one-shot sounds, **combine multiple acoustic layers**, compose **chiptune BGM loops**, or synthesize **realistic physical-modeling music** (grand piano, Karplus-Strong plucked guitar, bowed strings, flute, and brass).\n\nSwitch modes on the right or ask me to compose anything!',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -210,16 +367,75 @@ export default function SfxStudioPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  const stopOrchestra = useCallback(() => {
+    orchestraPlayerRef.current?.stop();
+    setOrchestraStatus('idle');
+    setOrchestraStatusText('');
+    setOrchestraProgress({ current: 0, total: 0 });
+  }, []);
+
+  const playOrchestraScore = useCallback(
+    async (scoreToPlay?: OrchestraScore) => {
+      const target = scoreToPlay || orchestraScore;
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setIsPlaying(false);
+
+      if (!orchestraPlayerRef.current) {
+        orchestraPlayerRef.current = new OrchestraPlayerController();
+      }
+
+      await orchestraPlayerRef.current.loadAndPlay(
+        target,
+        { loop: loopPlayback },
+        {
+          onStatus: (status, msg) => {
+            if (status === 'loading') {
+              setOrchestraStatus('loading');
+              setOrchestraStatusText(msg || 'Loading real SoundFont samples...');
+              setIsPlaying(false);
+            } else if (status === 'playing') {
+              setOrchestraStatus('playing');
+              setOrchestraStatusText('');
+              setIsPlaying(true);
+            } else {
+              setOrchestraStatus('idle');
+              if (msg) setOrchestraStatusText(msg);
+              setIsPlaying(false);
+            }
+          },
+          onProgress: (current, total) => {
+            setOrchestraProgress({ current, total });
+          },
+          onEnded: () => {
+            setOrchestraStatus('idle');
+            setIsPlaying(false);
+            setOrchestraProgress({ current: 0, total: 0 });
+          },
+        }
+      );
+    },
+    [orchestraScore, loopPlayback]
+  );
+
   const playAudio = useCallback((uri?: string) => {
     const targetUri = uri || currentAudioUri;
     if (!targetUri) return;
 
+    stopOrchestra();
     if (audioRef.current) {
       audioRef.current.src = targetUri;
       audioRef.current.play().catch(() => { });
       setIsPlaying(true);
     }
-  }, [currentAudioUri]);
+  }, [currentAudioUri, stopOrchestra]);
+
+  useEffect(() => {
+    return () => {
+      orchestraPlayerRef.current?.stop();
+    };
+  }, []);
 
   // Synthesize Single Oscillator
   const synthesizeSound = useCallback(
@@ -293,6 +509,102 @@ export default function SfxStudioPage() {
     [playAudio]
   );
 
+  // Compose Looping BGM Track
+  const composeBgmTrack = useCallback(
+    async (
+      channels: BgmChannel[],
+      bpm: number,
+      key: string,
+      stepCount: number,
+      loops: number,
+      masterFx: MasterEffects,
+      songName: string,
+      autoplay = true
+    ) => {
+      setIsSynthesizing(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/sfx/bgm`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            songName,
+            bpm,
+            key,
+            stepCount,
+            loops,
+            channels,
+            masterReverb: masterFx.masterReverb,
+            masterDistortion: masterFx.masterDistortion,
+            masterFilter: masterFx.masterFilter,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok && data.dataUri) {
+          setCurrentAudioUri(data.dataUri);
+          if (Array.isArray(data.channels)) {
+            setBgmChannels(data.channels);
+          }
+          if (autoplay) {
+            playAudio(data.dataUri);
+          }
+        }
+      } catch (err) {
+        console.error('Compose BGM failed:', err);
+      } finally {
+        setIsSynthesizing(false);
+      }
+    },
+    [playAudio]
+  );
+
+  // Compose Stereo Physical-Modeling Acoustic Track
+  const composeAcousticTrack = useCallback(
+    async (
+      channels: BgmChannel[],
+      bpm: number,
+      key: string,
+      stepCount: number,
+      loops: number,
+      hallRev: number,
+      analogWarmth: number,
+      songName: string,
+      autoplay = true
+    ) => {
+      setIsSynthesizing(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/sfx/acoustic`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            songName,
+            bpm,
+            key,
+            stepCount,
+            loops,
+            channels,
+            hallReverb: hallRev,
+            warmth: analogWarmth,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok && data.dataUri) {
+          setCurrentAudioUri(data.dataUri);
+          if (Array.isArray(data.channels)) {
+            setBgmChannels(data.channels);
+          }
+          if (autoplay) {
+            playAudio(data.dataUri);
+          }
+        }
+      } catch (err) {
+        console.error('Compose Acoustic Music failed:', err);
+      } finally {
+        setIsSynthesizing(false);
+      }
+    },
+    [playAudio]
+  );
+
   // Load presets on mount
   useEffect(() => {
     fetch(`${API_BASE_URL}/sfx/presets`)
@@ -301,6 +613,48 @@ export default function SfxStudioPage() {
         if (data.ok) {
           if (Array.isArray(data.presets)) setPresets(data.presets);
           if (Array.isArray(data.layeredPresets)) setLayeredPresets(data.layeredPresets);
+          if (Array.isArray(data.bgmPresets)) setBgmPresets(data.bgmPresets);
+          if (Array.isArray(data.acousticPresets)) setAcousticPresets(data.acousticPresets);
+          if (Array.isArray(data.orchestraPresets)) {
+            const normalizedPresets: OrchestraScore[] = data.orchestraPresets.map(
+              (raw: Partial<OrchestraScore>, pIdx: number) => {
+                const bpm = Number(raw.bpm || 84);
+                const beatSec = 60 / bpm;
+                const songName = String(raw.songName || raw.name || `Orchestra Preset ${pIdx + 1}`);
+                const tracks: OrchestraTrack[] = (raw.tracks || []).map((tr, tIdx) => ({
+                  id: tr.id || `preset-${pIdx}-tr-${tIdx}`,
+                  name: tr.name || `Track ${tIdx + 1}`,
+                  instrument: tr.instrument || 'SplendidGrandPiano',
+                  volume: tr.volume ?? 0.85,
+                  pan: tr.pan ?? 0,
+                  muted: Boolean(tr.muted),
+                  notes: (tr.notes || []).map((n) => ({
+                    ...n,
+                    time: n.time ?? (Number(n.beat) || 0) * beatSec,
+                    duration: n.duration ?? (Number(n.durationBeats) || 0.5) * beatSec,
+                  })),
+                }));
+                const totalBeats = Number(raw.totalBeats || 16);
+                return {
+                  ...raw,
+                  id: raw.id,
+                  name: raw.name,
+                  description: raw.description,
+                  songName,
+                  bpm,
+                  key: String(raw.key || 'D Minor'),
+                  reverb: Number(raw.reverb ?? 0.45),
+                  totalBeats,
+                  totalDuration: Number(raw.totalDuration || totalBeats * beatSec),
+                  tracks,
+                };
+              }
+            );
+            setOrchestraPresets(normalizedPresets);
+            if (normalizedPresets[0]) {
+              setOrchestraScore(normalizedPresets[0]);
+            }
+          }
         }
       })
       .catch((err) => console.warn('Could not load presets:', err));
@@ -424,7 +778,7 @@ export default function SfxStudioPage() {
 
   function loadSinglePreset(preset: Preset) {
     const next = { ...preset.params, soundName: preset.name };
-    setIsLayeredMode(false);
+    setStudioMode('single');
     setCompositionTitle(preset.name);
     setEditorParams(next);
     void synthesizeSound(next, true);
@@ -455,8 +809,220 @@ export default function SfxStudioPage() {
       setEditorParams(formattedLayers[0].params);
     }
     setMasterEffects(fx);
-    setIsLayeredMode(true);
+    setStudioMode('layered');
     void synthesizeLayeredSound(formattedLayers, fx, preset.name, true);
+  }
+
+  function loadBgmPreset(preset: BgmPreset) {
+    const formattedChannels: BgmChannel[] = preset.channels.map((ch, idx) => ({
+      id: ch.id || `ch-${idx + 1}-${Date.now().toString(36)}`,
+      name: ch.name,
+      instrument: ch.instrument,
+      volume: ch.volume ?? 0.85,
+      muted: Boolean(ch.muted),
+      filterCutoff: ch.filterCutoff ?? 12000,
+      distortion: ch.distortion ?? 0,
+      steps: [...ch.steps],
+    }));
+
+    const fx = preset.masterEffects || {
+      masterReverb: 0.2,
+      masterDistortion: 0.05,
+      masterFilter: 14000,
+    };
+
+    setCompositionTitle(preset.name);
+    setBgmBpm(preset.bpm);
+    setBgmKey(preset.key);
+    setBgmStepCount(preset.stepCount);
+    setBgmLoops(preset.loops || 2);
+    setBgmChannels(formattedChannels);
+    setMasterEffects(fx);
+    setStudioMode('bgm');
+    void composeBgmTrack(
+      formattedChannels,
+      preset.bpm,
+      preset.key,
+      preset.stepCount,
+      preset.loops || 2,
+      fx,
+      preset.name,
+      true
+    );
+  }
+
+  function loadAcousticPreset(preset: BgmPreset) {
+    const formattedChannels: BgmChannel[] = preset.channels.map((ch, idx) => ({
+      id: ch.id || `ac-${idx + 1}-${Date.now().toString(36)}`,
+      name: ch.name,
+      instrument: ch.instrument,
+      volume: ch.volume ?? 0.85,
+      pan: ch.pan ?? 0,
+      muted: Boolean(ch.muted),
+      steps: [...ch.steps],
+    }));
+
+    const rev = preset.hallReverb ?? 0.4;
+    const warm = preset.warmth ?? 0.2;
+
+    setCompositionTitle(preset.name);
+    setBgmBpm(preset.bpm);
+    setBgmKey(preset.key);
+    setBgmStepCount(preset.stepCount);
+    setBgmLoops(preset.loops || 2);
+    setHallReverb(rev);
+    setWarmth(warm);
+    setBgmChannels(formattedChannels);
+    setStudioMode('acoustic');
+    void composeAcousticTrack(
+      formattedChannels,
+      preset.bpm,
+      preset.key,
+      preset.stepCount,
+      preset.loops || 2,
+      rev,
+      warm,
+      preset.name,
+      true
+    );
+  }
+
+  function loadOrchestraPreset(preset: OrchestraScore, autoplay = true) {
+    const bpm = Number(preset.bpm || 84);
+    const beatSec = 60 / bpm;
+    const resolvedTitle = preset.songName || preset.name || 'Orchestral Score';
+    const cloned: OrchestraScore = {
+      ...preset,
+      songName: resolvedTitle,
+      bpm,
+      totalDuration: preset.totalDuration || (preset.totalBeats || 16) * beatSec,
+      tracks: preset.tracks.map((tr, idx) => ({
+        ...tr,
+        id: tr.id || `orch-tr-${idx + 1}-${Date.now().toString(36)}`,
+        muted: Boolean(tr.muted),
+        notes: tr.notes.map((n) => ({
+          ...n,
+          time: n.time ?? (Number(n.beat) || 0) * beatSec,
+          duration: n.duration ?? (Number(n.durationBeats) || 0.5) * beatSec,
+        })),
+      })),
+    };
+    setOrchestraScore(cloned);
+    setCompositionTitle(resolvedTitle);
+    setStudioMode('orchestra');
+    setPresetTab('orchestra');
+    if (autoplay) {
+      void playOrchestraScore(cloned);
+    }
+  }
+
+  async function handleExportOrchestraWav(scoreToExport?: OrchestraScore) {
+    const target = scoreToExport || orchestraScore;
+    setIsSynthesizing(true);
+    setOrchestraStatusText('Rendering stereo 44.1kHz WAV offline...');
+    try {
+      await exportOrchestraWav(target);
+      setOrchestraStatusText('');
+    } catch (err) {
+      setOrchestraStatusText(
+        err instanceof Error ? err.message : 'Offline WAV export failed'
+      );
+    } finally {
+      setIsSynthesizing(false);
+    }
+  }
+
+  function handleUpdateOrchestraTrack(trackId: string, partial: Partial<OrchestraTrack>) {
+    setOrchestraScore((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((tr) => (tr.id === trackId ? { ...tr, ...partial } : tr)),
+    }));
+  }
+
+  function handleAddOrchestraTrack() {
+    setOrchestraScore((prev) => {
+      const idx = prev.tracks.length + 1;
+      const newTrack: OrchestraTrack = {
+        id: `orch-tr-${idx}-${Date.now().toString(36)}`,
+        name: `Track ${idx} (Harp)`,
+        instrument: 'orchestral_harp',
+        volume: 0.75,
+        pan: idx % 2 === 0 ? 0.3 : -0.3,
+        muted: false,
+        notes: [
+          { beat: 0, durationBeats: 2, time: 0, duration: 1.5, note: 'D4', velocity: 72 },
+          { beat: 2, durationBeats: 2, time: 1.5, duration: 1.5, note: 'A4', velocity: 72 },
+          { beat: 4, durationBeats: 2, time: 3.0, duration: 1.5, note: 'F4', velocity: 72 },
+          { beat: 6, durationBeats: 2, time: 4.5, duration: 1.5, note: 'A4', velocity: 72 },
+        ],
+      };
+      return {
+        ...prev,
+        tracks: [...prev.tracks, newTrack],
+      };
+    });
+  }
+
+  function handleRemoveOrchestraTrack(trackId: string) {
+    setOrchestraScore((prev) => {
+      if (prev.tracks.length <= 1) return prev;
+      return {
+        ...prev,
+        tracks: prev.tracks.filter((tr) => tr.id !== trackId),
+      };
+    });
+  }
+
+  function getDefaultStepToken(ch: BgmChannel): string {
+    const inst = ch.instrument.toLowerCase();
+    const label = ch.name.toLowerCase();
+    if (inst.includes('kick') || label.includes('kick')) return 'K';
+    if (inst.includes('snare') || label.includes('snare')) return 'S';
+    if (inst.includes('hihat') || label.includes('hat')) return 'H';
+    if (inst === 'noise' || label.includes('drum') || label.includes('perc')) return 'K';
+    if (inst === 'piano' || inst === 'strings') return 'Am';
+    if (inst === 'guitar' || inst === 'harp') return 'A3';
+    if (inst === 'triangle' || inst === 'sawtooth' || label.includes('bass')) return 'C3';
+    return 'C5';
+  }
+
+  function handleToggleBgmStep(channelId: string, stepIndex: number) {
+    setBgmChannels((prev) =>
+      prev.map((ch) => {
+        if (ch.id !== channelId) return ch;
+        const nextSteps = [...ch.steps];
+        const curr = nextSteps[stepIndex] || '-';
+        nextSteps[stepIndex] = curr === '-' ? getDefaultStepToken(ch) : '-';
+        return { ...ch, steps: nextSteps };
+      })
+    );
+  }
+
+  function handleUpdateBgmChannel(channelId: string, partial: Partial<BgmChannel>) {
+    setBgmChannels((prev) =>
+      prev.map((ch) => (ch.id === channelId ? { ...ch, ...partial } : ch))
+    );
+  }
+
+  function handleAddBgmChannel() {
+    const idx = bgmChannels.length + 1;
+    const newCh: BgmChannel = {
+      id: `ch-${idx}-${Date.now().toString(36)}`,
+      name: isAcousticMode ? `Acoustic Track ${idx}` : `Track ${idx} (Arp)`,
+      instrument: isAcousticMode ? 'guitar' : 'triangle',
+      volume: 0.75,
+      pan: isAcousticMode ? (idx % 2 === 0 ? 0.3 : -0.3) : 0,
+      filterCutoff: 8000,
+      steps: Array.from({ length: bgmStepCount }, (_, i) =>
+        i % 4 === 0 ? 'C4' : i % 4 === 2 ? 'G4' : '-'
+      ),
+    };
+    setBgmChannels((prev) => [...prev, newCh]);
+  }
+
+  function handleRemoveBgmChannel(channelId: string) {
+    if (bgmChannels.length <= 1) return;
+    setBgmChannels((prev) => prev.filter((c) => c.id !== channelId));
   }
 
   // Draw Audio Waveform Visualization
@@ -482,6 +1048,59 @@ export default function SfxStudioPage() {
       ctx.lineTo(x, height);
     }
     ctx.stroke();
+
+    if (isOrchestraMode) {
+      const totalBeats = Math.max(orchestraScore.totalBeats || 16, 8);
+      const colors = ['#06b6d4', '#a855f7', '#10b981', '#f59e0b', '#ec4899'];
+      const trackCount = Math.max(orchestraScore.tracks.length, 1);
+      const rowH = (height - 16) / trackCount;
+
+      orchestraScore.tracks.forEach((tr, rIdx) => {
+        if (tr.muted) return;
+        ctx.fillStyle = colors[rIdx % colors.length];
+        tr.notes.forEach((ev) => {
+          const x = (ev.beat / totalBeats) * width;
+          const w = Math.max((ev.durationBeats / totalBeats) * width - 2, 4);
+          ctx.globalAlpha = Math.max(0.35, Math.min(0.95, (ev.velocity || 85) / 115));
+          ctx.fillRect(x + 1, 8 + rIdx * rowH + 3, w, Math.max(rowH - 6, 5));
+        });
+      });
+
+      const totalDur = computeEffectiveScoreDuration(orchestraScore);
+      if (orchestraStatus === 'playing' && totalDur > 0) {
+        const playheadX = Math.min(width - 2, Math.max(0, (orchestraProgress.current / totalDur) * width));
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(playheadX, 0);
+        ctx.lineTo(playheadX, height);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    if (isMusicMode) {
+      // Draw mini piano-roll / rhythmic energy bars for active BGM channels
+      const totalCols = Math.max(bgmStepCount, 16);
+      const colW = width / totalCols;
+      const rowH = (height - 16) / Math.max(bgmChannels.length, 1);
+      const colors = ['#06b6d4', '#a855f7', '#10b981', '#f59e0b', '#ef4444'];
+
+      bgmChannels.forEach((ch, rIdx) => {
+        if (ch.muted) return;
+        ctx.fillStyle = colors[rIdx % colors.length];
+        ch.steps.slice(0, totalCols).forEach((step, cIdx) => {
+          if (step && step !== '-') {
+            ctx.globalAlpha = step === '~' ? 0.45 : 0.85;
+            ctx.fillRect(cIdx * colW + 2, 8 + rIdx * rowH + 3, Math.max(colW - 4, 4), Math.max(rowH - 6, 6));
+          }
+        });
+      });
+      ctx.globalAlpha = 1;
+      return;
+    }
 
     // Waveform line
     ctx.strokeStyle = isPlaying ? '#06b6d4' : '#10b981';
@@ -572,7 +1191,19 @@ export default function SfxStudioPage() {
       }
     }
     ctx.stroke();
-  }, [editorParams, layers, isLayeredMode, isPlaying]);
+  }, [
+    editorParams,
+    layers,
+    isLayeredMode,
+    isMusicMode,
+    isOrchestraMode,
+    bgmChannels,
+    bgmStepCount,
+    orchestraScore,
+    orchestraStatus,
+    orchestraProgress,
+    isPlaying,
+  ]);
 
   // Handle Chat Submit to Agent
   async function handleSendPrompt(text: string) {
@@ -591,13 +1222,15 @@ export default function SfxStudioPage() {
       id: aiMsgId,
       role: 'assistant',
       content: '',
+      thought: '',
+      isThoughtOpen: true,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
     setMessages((prev) => [...prev, userMsg, aiMsg]);
     setChatInput('');
     setIsAgentThinking(true);
-    setActiveTool('Connecting to Procedural Audio Synthesizer...');
+    setActiveTool('Planning acoustic blueprint & DSP architecture...');
 
     try {
       const historyPayload = messages
@@ -613,6 +1246,7 @@ export default function SfxStudioPage() {
           history: historyPayload,
           agentic: true,
           mode: 'sfx',
+          subMode: studioMode,
         }),
       });
 
@@ -640,10 +1274,153 @@ export default function SfxStudioPage() {
 
         try {
           const data = JSON.parse(rawJson);
-          if (eventName === 'tool') {
-            setActiveTool(`Synthesizing sound: ${data.name}...`);
+          if (eventName === 'thought') {
+            setActiveTool('Reasoning acoustic design & DSP plan...');
+            if (data.text) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? { ...m, thought: (m.thought || '') + data.text }
+                    : m
+                )
+              );
+            }
+          } else if (eventName === 'tool') {
+            setActiveTool(
+              data.name === 'compose_real_music_score'
+                ? 'Arranging real sampled orchestral score (smplr SoundFonts)...'
+                : data.name === 'compose_acoustic_music'
+                  ? 'Rendering physical-modeling acoustic instruments...'
+                  : data.name === 'compose_bgm_loop'
+                    ? 'Composing multi-channel BGM loop...'
+                    : `Synthesizing sound: ${data.name}...`
+            );
           } else if (eventName === 'tool_result') {
-            if (
+            if (data.name === 'compose_real_music_score' && data.result?.isRealOrchestra) {
+              const resScore: OrchestraScore = {
+                ok: true,
+                isRealOrchestra: true,
+                songName: String(data.result.songName || 'Orchestral Score'),
+                bpm: Number(data.result.bpm || 84),
+                key: String(data.result.key || 'D Minor'),
+                reverb: Number(data.result.reverb ?? 0.45),
+                totalBeats: Number(data.result.totalBeats || 16),
+                totalDuration: Number(data.result.totalDuration || 12),
+                tracks: Array.isArray(data.result.tracks) ? data.result.tracks : [],
+              };
+
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                      ...m,
+                      soundName: resScore.songName,
+                      isRealOrchestra: true,
+                      orchestraScore: resScore,
+                      isAcoustic: false,
+                      isBgm: false,
+                      isLayered: false,
+                      bpm: resScore.bpm,
+                      musicalKey: resScore.key,
+                    }
+                    : m
+                )
+              );
+
+              setStudioMode('orchestra');
+              setPresetTab('orchestra');
+              setOrchestraScore(resScore);
+              setCompositionTitle(resScore.songName);
+              void playOrchestraScore(resScore);
+            } else if (data.name === 'compose_acoustic_music' && data.result?.dataUri) {
+              const acUri = data.result.dataUri as string;
+              const songTitle = data.result.soundName || 'Acoustic Ensemble';
+              const resChannels = (data.result.channels as BgmChannel[]) || [];
+              const resBpm = Number(data.result.bpm || 96);
+              const resKey = String(data.result.key || 'A Minor');
+              const resStepCount = Number(data.result.stepCount || 32);
+              const resLoops = Number(data.result.loops || 2);
+              const rev = Number(data.result.acousticEffects?.hallReverb ?? 0.38);
+              const warm = Number(data.result.acousticEffects?.warmth ?? 0.2);
+
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                      ...m,
+                      dataUri: acUri,
+                      soundName: songTitle,
+                      isAcoustic: true,
+                      isBgm: false,
+                      isLayered: false,
+                      bpm: resBpm,
+                      musicalKey: resKey,
+                      stepCount: resStepCount,
+                      hallReverb: rev,
+                      warmth: warm,
+                      bgmChannels: resChannels,
+                    }
+                    : m
+                )
+              );
+
+              setStudioMode('acoustic');
+              setCompositionTitle(songTitle);
+              setBgmBpm(resBpm);
+              setBgmKey(resKey);
+              setBgmStepCount(resStepCount);
+              setBgmLoops(resLoops);
+              setHallReverb(rev);
+              setWarmth(warm);
+              setBgmChannels(resChannels);
+              setLoopPlayback(true);
+              setCurrentAudioUri(acUri);
+              playAudio(acUri);
+            } else if (data.name === 'compose_bgm_loop' && data.result?.dataUri) {
+              const bgmUri = data.result.dataUri as string;
+              const songTitle = data.result.soundName || 'Game BGM Loop';
+              const resChannels = (data.result.channels as BgmChannel[]) || [];
+              const resBpm = Number(data.result.bpm || 128);
+              const resKey = String(data.result.key || 'C Major');
+              const resStepCount = Number(data.result.stepCount || 32);
+              const resLoops = Number(data.result.loops || 2);
+              const masterFx = data.result.masterEffects || {
+                masterReverb: 0.2,
+                masterDistortion: 0.05,
+                masterFilter: 16000,
+              };
+
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === aiMsgId
+                    ? {
+                      ...m,
+                      dataUri: bgmUri,
+                      soundName: songTitle,
+                      isBgm: true,
+                      isLayered: false,
+                      bpm: resBpm,
+                      musicalKey: resKey,
+                      stepCount: resStepCount,
+                      bgmChannels: resChannels,
+                      masterEffects: masterFx,
+                    }
+                    : m
+                )
+              );
+
+              setStudioMode('bgm');
+              setCompositionTitle(songTitle);
+              setBgmBpm(resBpm);
+              setBgmKey(resKey);
+              setBgmStepCount(resStepCount);
+              setBgmLoops(resLoops);
+              setBgmChannels(resChannels);
+              setMasterEffects(masterFx);
+              setLoopPlayback(true);
+              setCurrentAudioUri(bgmUri);
+              playAudio(bgmUri);
+            } else if (
               (data.name === 'synthesize_layered_sfx' ||
                 data.name === 'blend_sfx_presets') &&
               data.result?.dataUri
@@ -666,6 +1443,7 @@ export default function SfxStudioPage() {
                       dataUri: compositeUri,
                       soundName: newName,
                       isLayered: true,
+                      isBgm: false,
                       layers: resLayers,
                       masterEffects: masterFx,
                     }
@@ -674,7 +1452,7 @@ export default function SfxStudioPage() {
               );
 
               // Update Center Editor to Layered Mode
-              setIsLayeredMode(true);
+              setStudioMode('layered');
               setCompositionTitle(newName);
               setLayers(resLayers);
               if (resLayers[0]) {
@@ -699,12 +1477,13 @@ export default function SfxStudioPage() {
                       params: newParams,
                       soundName: newName,
                       isLayered: false,
+                      isBgm: false,
                     }
                     : m
                 )
               );
 
-              setIsLayeredMode(false);
+              setStudioMode('single');
               setCompositionTitle(newName);
               setEditorParams({ ...newParams, soundName: newName });
               setCurrentAudioUri(newUri);
@@ -715,7 +1494,11 @@ export default function SfxStudioPage() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === aiMsgId
-                  ? { ...m, content: m.content + (data.text || '') }
+                  ? {
+                    ...m,
+                    content: m.content + (data.text || ''),
+                    isThoughtOpen: false,
+                  }
                   : m
               )
             );
@@ -781,6 +1564,7 @@ export default function SfxStudioPage() {
       {/* Hidden audio element for browser playback */}
       <audio
         ref={audioRef}
+        loop={isMusicMode && loopPlayback}
         onEnded={() => setIsPlaying(false)}
         onPause={() => setIsPlaying(false)}
       />
@@ -823,20 +1607,107 @@ export default function SfxStudioPage() {
                     <span className="message-timestamp">{msg.timestamp}</span>
                   </div>
 
-                  <div className="sfx-text-body">{msg.content}</div>
+                  {/* Pre-Generation Acoustic Planning & Reasoning Drawer */}
+                  {msg.thought && (
+                    <div className="sfx-thought-box">
+                      <button
+                        type="button"
+                        className="sfx-thought-toggle"
+                        onClick={() =>
+                          setMessages((prev) =>
+                            prev.map((m) =>
+                              m.id === msg.id
+                                ? { ...m, isThoughtOpen: !m.isThoughtOpen }
+                                : m
+                            )
+                          )
+                        }
+                        aria-expanded={Boolean(msg.isThoughtOpen)}
+                      >
+                        <span className="sfx-thought-title">
+                          <IconSpark />
+                          <span>
+                            {msg.dataUri || msg.orchestraScore || msg.content
+                              ? 'Acoustic Planning & DSP Reasoning'
+                              : 'Planning acoustic architecture...'}
+                          </span>
+                        </span>
+                        <IconChevronDown
+                          className={`sfx-thought-chevron ${msg.isThoughtOpen ? 'open' : ''}`}
+                        />
+                      </button>
+                      {msg.isThoughtOpen && (
+                        <div className="sfx-thought-content">{msg.thought}</div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Playable Inline Sound Card generated by Agent */}
-                  {msg.dataUri && (
+                  {msg.content && <div className="sfx-text-body">{msg.content}</div>}
+
+                  {/* Playable Inline Sound / BGM / Acoustic / Orchestra Card generated by Agent */}
+                  {(msg.dataUri || (msg.isRealOrchestra && msg.orchestraScore)) && (
                     <div className="sfx-inline-player-card">
                       <div className="sfx-inline-player-header">
                         <span className="sfx-sound-name">
-                          {msg.isLayered ? <IconLayers /> : <IconAudioWave />}
-                          <span>{msg.soundName || 'Composite SFX'}</span>
+                          {msg.isRealOrchestra || msg.isLayered || msg.isBgm || msg.isAcoustic ? <IconLayers /> : <IconAudioWave />}
+                          <span>{msg.soundName || msg.orchestraScore?.songName || 'Composite Audio'}</span>
                         </span>
                         <span className="sfx-sound-waveform">
-                          {msg.isLayered ? `${msg.layers?.length || 3} LAYERS` : msg.params?.waveform?.toUpperCase() || 'DSP'}
+                          {msg.isRealOrchestra && msg.orchestraScore
+                            ? `${msg.orchestraScore.bpm} BPM • ${msg.orchestraScore.key} • REAL SAMPLES`
+                            : msg.isAcoustic
+                              ? `${msg.bpm || 96} BPM • STEREO ACOUSTIC`
+                              : msg.isBgm
+                                ? `${msg.bpm || 128} BPM • ${msg.musicalKey || 'BGM'}`
+                                : msg.isLayered
+                                  ? `${msg.layers?.length || 3} LAYERS`
+                                  : msg.params?.waveform?.toUpperCase() || 'DSP'}
                         </span>
                       </div>
+
+                      {/* Real Orchestra Sampled Tracks Breakdown */}
+                      {msg.isRealOrchestra && msg.orchestraScore && msg.orchestraScore.tracks.length > 0 && (
+                        <div className="sfx-inline-layers-breakdown">
+                          <span className="sfx-breakdown-title">
+                            Real SoundFont Orchestra ({msg.orchestraScore.totalBeats} Beats):
+                          </span>
+                          {msg.orchestraScore.tracks.map((tr, tIdx) => (
+                            <div key={tr.id || tIdx} className="sfx-inline-layer-row">
+                              <div className="sfx-inline-layer-info">
+                                <span className="sfx-waveform-badge orchestra">
+                                  {tr.instrument}
+                                </span>
+                                <span>{tr.name}</span>
+                              </div>
+                              <span className="sfx-layer-delay-badge">
+                                {tr.notes.length} notes
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Multi-Channel BGM / Acoustic Breakdown */}
+                      {(msg.isBgm || msg.isAcoustic) && msg.bgmChannels && msg.bgmChannels.length > 0 && (
+                        <div className="sfx-inline-layers-breakdown">
+                          <span className="sfx-breakdown-title">
+                            {msg.isAcoustic ? 'Acoustic Ensemble' : 'Music Channels'} ({msg.stepCount || 32} Steps):
+                          </span>
+                          {msg.bgmChannels.map((ch, cIdx) => (
+                            <div key={ch.id || cIdx} className="sfx-inline-layer-row">
+                              <div className="sfx-inline-layer-info">
+                                <span className={`sfx-waveform-badge ${ch.instrument}`}>
+                                  {ch.instrument}
+                                </span>
+                                <span>{ch.name}</span>
+                              </div>
+                              <span className="sfx-layer-delay-badge">
+                                {ch.steps.filter((s) => s && s !== '-' && s !== '~').length} events
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Multi-Layer Breakdown with Solo Audition */}
                       {msg.isLayered && msg.layers && msg.layers.length > 0 && (
@@ -875,18 +1746,49 @@ export default function SfxStudioPage() {
                         <button
                           type="button"
                           className="btn-primary sfx-play-btn"
-                          onClick={() => playAudio(msg.dataUri)}
+                          onClick={() => {
+                            if (msg.isRealOrchestra && msg.orchestraScore) {
+                              void playOrchestraScore(msg.orchestraScore);
+                            } else {
+                              playAudio(msg.dataUri);
+                            }
+                          }}
                         >
                           <IconPlay />
-                          <span>Play Mix</span>
+                          <span>
+                            {msg.isRealOrchestra
+                              ? 'Play Real Audio'
+                              : msg.isBgm || msg.isAcoustic
+                                ? 'Play Track'
+                                : 'Play Mix'}
+                          </span>
                         </button>
 
                         <button
                           type="button"
                           className="btn-ghost sfx-load-editor-btn"
                           onClick={() => {
-                            if (msg.isLayered && msg.layers) {
-                              setIsLayeredMode(true);
+                            if (msg.isRealOrchestra && msg.orchestraScore) {
+                              loadOrchestraPreset(msg.orchestraScore, false);
+                            } else if (msg.isAcoustic && msg.bgmChannels) {
+                              setStudioMode('acoustic');
+                              setCompositionTitle(msg.soundName || 'Acoustic Ensemble');
+                              setBgmBpm(msg.bpm || 96);
+                              setBgmKey(msg.musicalKey || 'A Minor');
+                              setBgmStepCount(msg.stepCount || 32);
+                              setHallReverb(msg.hallReverb ?? 0.38);
+                              setWarmth(msg.warmth ?? 0.2);
+                              setBgmChannels(msg.bgmChannels);
+                            } else if (msg.isBgm && msg.bgmChannels) {
+                              setStudioMode('bgm');
+                              setCompositionTitle(msg.soundName || 'Game BGM Loop');
+                              setBgmBpm(msg.bpm || 128);
+                              setBgmKey(msg.musicalKey || 'C Major');
+                              setBgmStepCount(msg.stepCount || 32);
+                              setBgmChannels(msg.bgmChannels);
+                              if (msg.masterEffects) setMasterEffects(msg.masterEffects);
+                            } else if (msg.isLayered && msg.layers) {
+                              setStudioMode('layered');
                               setCompositionTitle(msg.soundName || 'Layered Composition');
                               setLayers(msg.layers);
                               if (msg.layers[0]) {
@@ -895,7 +1797,7 @@ export default function SfxStudioPage() {
                               }
                               if (msg.masterEffects) setMasterEffects(msg.masterEffects);
                             } else if (msg.params) {
-                              setIsLayeredMode(false);
+                              setStudioMode('single');
                               setCompositionTitle(msg.soundName || 'Custom SFX');
                               setEditorParams({ ...msg.params, soundName: msg.soundName });
                             }
@@ -903,21 +1805,42 @@ export default function SfxStudioPage() {
                               setCurrentAudioUri(msg.dataUri);
                             }
                           }}
-                          title="Load this multi-layer sound into the center editor"
+                          title="Load this audio into the center editor"
                         >
                           <IconSliders />
-                          <span>Load in Editor</span>
+                          <span>
+                            {msg.isRealOrchestra
+                              ? 'Load in Orchestra Studio'
+                              : msg.isAcoustic
+                                ? 'Load in Acoustic Studio'
+                                : msg.isBgm
+                                  ? 'Load in Sequencer'
+                                  : 'Load in Editor'}
+                          </span>
                         </button>
 
-                        <a
-                          href={msg.dataUri}
-                          download={`${(msg.soundName || 'game-sfx').toLowerCase().replace(/\s+/g, '-')}.wav`}
-                          className="btn-ghost sfx-download-link"
-                          title="Download 16-bit WAV"
-                        >
-                          <IconDownload />
-                          <span>WAV</span>
-                        </a>
+                        {msg.isRealOrchestra && msg.orchestraScore ? (
+                          <button
+                            type="button"
+                            className="btn-ghost sfx-download-link"
+                            onClick={() => void handleExportOrchestraWav(msg.orchestraScore)}
+                            disabled={isSynthesizing}
+                            title="Render offline 16-bit WAV via smplr"
+                          >
+                            <IconDownload />
+                            <span>{isSynthesizing ? 'Exporting...' : 'WAV'}</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={msg.dataUri}
+                            download={`${(msg.soundName || 'game-sfx').toLowerCase().replace(/\s+/g, '-')}.wav`}
+                            className="btn-ghost sfx-download-link"
+                            title="Download 16-bit WAV"
+                          >
+                            <IconDownload />
+                            <span>WAV</span>
+                          </a>
+                        )}
                       </div>
                     </div>
                   )}
@@ -983,20 +1906,45 @@ export default function SfxStudioPage() {
               className="sfx-title-input"
               value={compositionTitle}
               onChange={(e) => setCompositionTitle(e.target.value)}
-              title="Click to rename sound composition"
+              title="Click to rename composition"
             />
             <span className="sfx-duration-pill">
-              {isLayeredMode
-                ? `${layers.length} Layers • 44.1kHz 16-bit PCM`
-                : `${(editorParams.duration || 0.25).toFixed(2)}s • 44.1kHz`}
+              {isOrchestraMode
+                ? `${orchestraScore.bpm} BPM • ${orchestraScore.key} • smplr SoundFonts`
+                : isAcousticMode
+                  ? `${bgmBpm} BPM • ${bgmKey} • Stereo Acoustic`
+                  : isBgmMode
+                    ? `${bgmBpm} BPM • ${bgmKey} • ${bgmChannels.length} Tracks`
+                    : isLayeredMode
+                      ? `${layers.length} Layers • 44.1kHz 16-bit PCM`
+                      : `${(editorParams.duration || 0.25).toFixed(2)}s • 44.1kHz`}
             </span>
           </div>
 
           <div className="sfx-header-actions">
+            {isMusicMode && (
+              <button
+                type="button"
+                className={`btn-ghost sfx-loop-btn ${loopPlayback ? 'active' : ''}`}
+                onClick={() => setLoopPlayback((prev) => !prev)}
+                title="Toggle seamless loop playback"
+              >
+                <span>{loopPlayback ? '🔁 Loop On' : 'Loop Off'}</span>
+              </button>
+            )}
+
             <button
               type="button"
               className={`btn-primary sfx-main-play-btn ${isPlaying ? 'playing' : ''}`}
               onClick={() => {
+                if (isOrchestraMode) {
+                  if (orchestraStatus === 'playing' || orchestraStatus === 'loading') {
+                    stopOrchestra();
+                  } else {
+                    void playOrchestraScore();
+                  }
+                  return;
+                }
                 if (isPlaying) {
                   audioRef.current?.pause();
                   setIsPlaying(false);
@@ -1006,42 +1954,108 @@ export default function SfxStudioPage() {
               }}
               title="Play master audio composition"
             >
-              {isPlaying ? <IconPause /> : <IconPlay />}
-              <span>{isPlaying ? 'Stop' : 'Play Mix'}</span>
+              {isPlaying || orchestraStatus === 'playing' ? <IconPause /> : <IconPlay />}
+              <span>
+                {isOrchestraMode
+                  ? orchestraStatus === 'loading'
+                    ? 'Loading Samples...'
+                    : orchestraStatus === 'playing'
+                      ? 'Stop'
+                      : 'Play Orchestra'
+                  : isPlaying
+                    ? 'Stop'
+                    : isMusicMode
+                      ? 'Play Track'
+                      : 'Play Mix'}
+              </span>
             </button>
 
             <button
               type="button"
               className="btn-secondary sfx-synth-btn"
               onClick={() => {
-                if (isLayeredMode) {
+                if (isOrchestraMode) {
+                  void playOrchestraScore();
+                } else if (isAcousticMode) {
+                  void composeAcousticTrack(
+                    bgmChannels,
+                    bgmBpm,
+                    bgmKey,
+                    bgmStepCount,
+                    bgmLoops,
+                    hallReverb,
+                    warmth,
+                    compositionTitle,
+                    true
+                  );
+                } else if (isBgmMode) {
+                  void composeBgmTrack(
+                    bgmChannels,
+                    bgmBpm,
+                    bgmKey,
+                    bgmStepCount,
+                    bgmLoops,
+                    masterEffects,
+                    compositionTitle,
+                    true
+                  );
+                } else if (isLayeredMode) {
                   void synthesizeLayeredSound(layers, masterEffects, compositionTitle, true);
                 } else {
                   void synthesizeSound(editorParams, true);
                 }
               }}
-              disabled={isSynthesizing}
-              title="Re-calculate and render audio buffer"
+              disabled={isSynthesizing || orchestraStatus === 'loading'}
+              title={
+                isOrchestraMode
+                  ? 'Reload sampled instruments and audition score'
+                  : 'Re-calculate and render audio buffer'
+              }
             >
               <IconAudioWave />
-              <span>{isSynthesizing ? 'Rendering...' : 'Re-Synthesize'}</span>
+              <span>
+                {isOrchestraMode
+                  ? orchestraStatus === 'loading'
+                    ? 'Loading...'
+                    : 'Audition Score'
+                  : isSynthesizing
+                    ? 'Rendering...'
+                    : isAcousticMode
+                      ? 'Render Acoustic'
+                      : isBgmMode
+                        ? 'Render BGM'
+                        : 'Re-Synthesize'}
+              </span>
             </button>
 
-            {currentAudioUri && (
-              <a
-                href={currentAudioUri}
-                download={`${compositionTitle.toLowerCase().replace(/\s+/g, '-')}.wav`}
+            {isOrchestraMode ? (
+              <button
+                type="button"
                 className="btn-ghost sfx-download-btn"
-                title="Download 16-bit PCM WAV"
+                onClick={() => void handleExportOrchestraWav()}
+                disabled={isSynthesizing}
+                title="Offline render 44.1kHz stereo WAV via smplr"
               >
                 <IconDownload />
-                <span>Export WAV</span>
-              </a>
+                <span>{isSynthesizing ? 'Exporting...' : 'Export Studio WAV'}</span>
+              </button>
+            ) : (
+              currentAudioUri && (
+                <a
+                  href={currentAudioUri}
+                  download={`${compositionTitle.toLowerCase().replace(/\s+/g, '-')}.wav`}
+                  className="btn-ghost sfx-download-btn"
+                  title="Download 16-bit PCM WAV"
+                >
+                  <IconDownload />
+                  <span>Export WAV</span>
+                </a>
+              )
             )}
           </div>
         </div>
 
-        {/* Live Canvas Waveform Oscilloscope */}
+        {/* Live Canvas Waveform / Sequencer Visualizer */}
         <div className="sfx-visualizer-container">
           <canvas
             ref={canvasRef}
@@ -1051,7 +2065,22 @@ export default function SfxStudioPage() {
           />
           <div className="sfx-canvas-overlay">
             <span className="sfx-formula-text">
-              {isLayeredMode ? (
+              {isOrchestraMode ? (
+                <>
+                  REAL SAMPLED ORCHESTRA: {orchestraScore.bpm} BPM • {orchestraScore.key} • Hall Reverb{' '}
+                  {Math.round((orchestraScore.reverb || 0) * 100)}% (
+                  {orchestraScore.tracks.map((t) => `${t.name} [${t.instrument}]`).join(' + ')})
+                  {orchestraStatusText ? ` — ${orchestraStatusText}` : ''}
+                </>
+              ) : isAcousticMode ? (
+                <>
+                  ACOUSTIC ENSEMBLE (STEREO): {bgmBpm} BPM • {bgmKey} • Hall Reverb {Math.round(hallReverb * 100)}% ({bgmChannels.map((c) => `${c.name} [${c.instrument}]`).join(' + ')})
+                </>
+              ) : isBgmMode ? (
+                <>
+                  BGM SEQUENCER: {bgmBpm} BPM • {bgmKey} • {bgmStepCount} Steps × {bgmLoops} Loops ({bgmChannels.map((c) => c.name).join(' + ')})
+                </>
+              ) : isLayeredMode ? (
                 <>
                   <IconLayers style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
                   MASTER MIX: {layers.map((l) => `${l.name} [${l.waveform}]`).join(' + ')}
@@ -1073,21 +2102,582 @@ export default function SfxStudioPage() {
           <button
             type="button"
             className={`sfx-tab-btn ${isLayeredMode ? 'active' : ''}`}
-            onClick={() => setIsLayeredMode(true)}
+            onClick={() => {
+              stopOrchestra();
+              setStudioMode('layered');
+            }}
           >
             <IconLayers />
-            <span>Multi-Layer Stack</span>
+            <span>Multi-Layer SFX</span>
             <span className="sfx-tab-count">{layers.length}</span>
           </button>
           <button
             type="button"
-            className={`sfx-tab-btn ${!isLayeredMode ? 'active' : ''}`}
-            onClick={() => setIsLayeredMode(false)}
+            className={`sfx-tab-btn ${isOrchestraMode ? 'active' : ''}`}
+            onClick={() => {
+              if (audioRef.current) audioRef.current.pause();
+              setIsPlaying(false);
+              setStudioMode('orchestra');
+              setPresetTab('orchestra');
+              if (orchestraScore.songName) {
+                setCompositionTitle(orchestraScore.songName);
+              }
+            }}
+          >
+            <IconSpark />
+            <span>Real Orchestra</span>
+            <span className="sfx-tab-count">SMPLR</span>
+          </button>
+          <button
+            type="button"
+            className={`sfx-tab-btn ${isAcousticMode ? 'active' : ''}`}
+            onClick={() => {
+              stopOrchestra();
+              setStudioMode('acoustic');
+              setPresetTab('acoustic');
+              if (!bgmChannels.some((c) => ['piano', 'guitar', 'strings', 'flute', 'brass', 'harp', 'epiano'].includes(c.instrument)) && acousticPresets[0]) {
+                loadAcousticPreset(acousticPresets[0]);
+              }
+            }}
+          >
+            <IconSpark />
+            <span>Acoustic Studio</span>
+            <span className="sfx-tab-count">DSP</span>
+          </button>
+          <button
+            type="button"
+            className={`sfx-tab-btn ${isBgmMode ? 'active' : ''}`}
+            onClick={() => {
+              stopOrchestra();
+              setStudioMode('bgm');
+              setPresetTab('bgm');
+            }}
+          >
+            <IconAudioWave />
+            <span>BGM Chiptune</span>
+            <span className="sfx-tab-count">{bgmChannels.length}</span>
+          </button>
+          <button
+            type="button"
+            className={`sfx-tab-btn ${studioMode === 'single' ? 'active' : ''}`}
+            onClick={() => {
+              stopOrchestra();
+              setStudioMode('single');
+            }}
           >
             <IconSliders />
             <span>Single Oscillator</span>
           </button>
         </div>
+
+        {/* Real Sampled Orchestra Studio (smplr SoundFonts + SplendidGrandPiano + TR-808) */}
+        {isOrchestraMode && (
+          <div className="sfx-layers-rack sfx-orchestra-rack">
+            <div className="sfx-rack-header">
+              <span className="sfx-rack-title">
+                <IconSpark />
+                <span>Real Sampled Orchestra (FluidR3_GM + Splendid Grand Piano)</span>
+              </span>
+              <div className="sfx-bgm-transport">
+                <label className="sfx-bpm-control">
+                  <span>BPM</span>
+                  <input
+                    type="number"
+                    min={45}
+                    max={195}
+                    value={orchestraScore.bpm}
+                    onChange={(e) => {
+                      const nextBpm = Math.min(195, Math.max(45, Number(e.target.value) || 84));
+                      setOrchestraScore((prev) => ({ ...prev, bpm: nextBpm }));
+                    }}
+                  />
+                </label>
+                <label className="sfx-bpm-control">
+                  <span>Key</span>
+                  <input
+                    type="text"
+                    value={orchestraScore.key}
+                    onChange={(e) =>
+                      setOrchestraScore((prev) => ({ ...prev, key: e.target.value }))
+                    }
+                    style={{ width: 76 }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn-ghost sfx-solo-btn"
+                  onClick={handleAddOrchestraTrack}
+                  title="Add another sampled orchestra instrument"
+                >
+                  <IconPlus />
+                  <span>Add Instrument</span>
+                </button>
+              </div>
+            </div>
+
+            {orchestraScore.tracks.map((tr) => {
+              const notePreview = tr.notes
+                .slice(0, 10)
+                .map((n) => n.note)
+                .join(' · ');
+              return (
+                <div key={tr.id} className={`sfx-bgm-channel-row ${tr.muted ? 'muted' : ''}`}>
+                  <div className="sfx-bgm-channel-meta">
+                    <div className="sfx-bgm-channel-top">
+                      <input
+                        type="text"
+                        className="sfx-layer-name-input"
+                        value={tr.name}
+                        onChange={(e) =>
+                          handleUpdateOrchestraTrack(tr.id, { name: e.target.value })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className={`sfx-solo-btn ${tr.muted ? 'active' : ''}`}
+                        onClick={() =>
+                          handleUpdateOrchestraTrack(tr.id, { muted: !tr.muted })
+                        }
+                      >
+                        {tr.muted ? 'Muted' : 'Mute'}
+                      </button>
+                      {orchestraScore.tracks.length > 1 && (
+                        <button
+                          type="button"
+                          className="sfx-solo-btn"
+                          onClick={() => handleRemoveOrchestraTrack(tr.id)}
+                          title="Remove track"
+                        >
+                          <IconTrash />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="sfx-bgm-channel-sub">
+                      <select
+                        className="sfx-inst-select"
+                        value={tr.instrument}
+                        onChange={(e) =>
+                          handleUpdateOrchestraTrack(tr.id, { instrument: e.target.value })
+                        }
+                      >
+                        {(
+                          [
+                            'Piano & Keys',
+                            'Strings',
+                            'Winds & Brass',
+                            'Choir & Organ',
+                            'Plucked & Mallets',
+                            'Drums',
+                          ] as const
+                        ).map((cat) => (
+                          <optgroup key={cat} label={cat}>
+                            {ORCHESTRA_INSTRUMENT_OPTIONS.filter((o) => o.category === cat).map(
+                              (opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              )
+                            )}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1.25"
+                        step="0.05"
+                        value={tr.volume}
+                        onChange={(e) =>
+                          handleUpdateOrchestraTrack(tr.id, {
+                            volume: parseFloat(e.target.value),
+                          })
+                        }
+                        title={`Volume: ${Math.round(tr.volume * 100)}%`}
+                      />
+                    </div>
+
+                    <div
+                      className="sfx-bgm-channel-sub"
+                      style={{ fontSize: 10, color: 'var(--text-muted)' }}
+                    >
+                      <span>Pan</span>
+                      <input
+                        type="range"
+                        min="-0.85"
+                        max="0.85"
+                        step="0.05"
+                        value={tr.pan ?? 0}
+                        onChange={(e) =>
+                          handleUpdateOrchestraTrack(tr.id, {
+                            pan: parseFloat(e.target.value),
+                          })
+                        }
+                        title={`Pan: ${tr.pan ?? 0}`}
+                      />
+                      <span className="mono-value">{tr.notes.length} notes</span>
+                    </div>
+                  </div>
+
+                  {/* Mini Horizontal Score Timeline for this Track */}
+                  <div className="sfx-orchestra-track-roll">
+                    <div className="sfx-orchestra-roll-bar">
+                      {tr.notes.map((ev, nIdx) => {
+                        const totalB = Math.max(orchestraScore.totalBeats || 16, 8);
+                        const leftPct = Math.min(98, Math.max(0, (ev.beat / totalB) * 100));
+                        const widthPct = Math.max(
+                          2.2,
+                          Math.min(100 - leftPct, (ev.durationBeats / totalB) * 100)
+                        );
+                        return (
+                          <span
+                            key={`${tr.id}-n-${nIdx}`}
+                            className="sfx-orchestra-note-block"
+                            style={{
+                              left: `${leftPct}%`,
+                              width: `${widthPct}%`,
+                              opacity: Math.max(0.45, Math.min(1, (ev.velocity || 84) / 115)),
+                            }}
+                            title={`${ev.note} @ beat ${ev.beat} (${ev.durationBeats}b)`}
+                          >
+                            {ev.note}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div className="sfx-orchestra-note-summary">
+                      {notePreview}
+                      {tr.notes.length > 10 ? ` ... (+${tr.notes.length - 10} more)` : ''}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className="sfx-master-effects-bar">
+              <span className="sfx-master-title">Real Hall Space & Tempo</span>
+              <div className="sfx-master-sliders">
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Convolution Hall Reverb</span>
+                    <span className="mono-value">
+                      {Math.round((orchestraScore.reverb || 0) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.75"
+                    step="0.05"
+                    value={orchestraScore.reverb ?? 0.42}
+                    onChange={(e) =>
+                      setOrchestraScore((prev) => ({
+                        ...prev,
+                        reverb: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Total Score Length</span>
+                    <span className="mono-value">
+                      {orchestraScore.totalBeats} Beats ({computeEffectiveScoreDuration(orchestraScore).toFixed(1)}s)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="8"
+                    max="64"
+                    step="4"
+                    value={orchestraScore.totalBeats || 16}
+                    onChange={(e) =>
+                      setOrchestraScore((prev) => ({
+                        ...prev,
+                        totalBeats: parseInt(e.target.value, 10),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Shared Multi-Channel Step Sequencer (Chiptune BGM OR Physical-Modeling Acoustic Studio) */}
+        {isMusicMode && !isOrchestraMode && (
+          <div className="sfx-layers-rack sfx-bgm-rack">
+            <div className="sfx-rack-header">
+              <span className="sfx-rack-title">
+                {isAcousticMode ? <IconSpark /> : <IconAudioWave />}
+                <span>
+                  {isAcousticMode
+                    ? 'Physical-Modeling Acoustic Ensemble (Polyphonic Chords & Stereo)'
+                    : 'Chiptune Pattern Sequencer'}
+                </span>
+              </span>
+              <div className="sfx-bgm-transport">
+                <label className="sfx-bpm-control">
+                  <span>BPM</span>
+                  <input
+                    type="number"
+                    min={55}
+                    max={210}
+                    value={bgmBpm}
+                    onChange={(e) =>
+                      setBgmBpm(Math.min(210, Math.max(55, Number(e.target.value) || 100)))
+                    }
+                  />
+                </label>
+                <label className="sfx-bpm-control">
+                  <span>Key</span>
+                  <input
+                    type="text"
+                    value={bgmKey}
+                    onChange={(e) => setBgmKey(e.target.value)}
+                    style={{ width: 76 }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn-ghost sfx-solo-btn"
+                  onClick={handleAddBgmChannel}
+                  title="Add a new instrument track"
+                >
+                  <IconPlus />
+                  <span>Add Track</span>
+                </button>
+              </div>
+            </div>
+
+            {bgmChannels.map((ch) => (
+              <div key={ch.id} className={`sfx-bgm-channel-row ${ch.muted ? 'muted' : ''}`}>
+                <div className="sfx-bgm-channel-meta">
+                  <div className="sfx-bgm-channel-top">
+                    <input
+                      type="text"
+                      className="sfx-layer-name-input"
+                      value={ch.name}
+                      onChange={(e) =>
+                        handleUpdateBgmChannel(ch.id, { name: e.target.value })
+                      }
+                    />
+                    <button
+                      type="button"
+                      className={`sfx-solo-btn ${ch.muted ? 'active' : ''}`}
+                      onClick={() =>
+                        handleUpdateBgmChannel(ch.id, { muted: !ch.muted })
+                      }
+                      title="Mute / Unmute channel"
+                    >
+                      {ch.muted ? 'Muted' : 'Mute'}
+                    </button>
+                    {bgmChannels.length > 1 && (
+                      <button
+                        type="button"
+                        className="sfx-solo-btn"
+                        onClick={() => handleRemoveBgmChannel(ch.id)}
+                        title="Remove channel"
+                      >
+                        <IconTrash />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="sfx-bgm-channel-sub">
+                    <select
+                      className="sfx-inst-select"
+                      value={ch.instrument}
+                      onChange={(e) =>
+                        handleUpdateBgmChannel(ch.id, { instrument: e.target.value })
+                      }
+                    >
+                      <optgroup label="Acoustic Physical-Modeling">
+                        <option value="piano">piano (Grand)</option>
+                        <option value="epiano">epiano (Rhodes)</option>
+                        <option value="guitar">guitar (Plucked)</option>
+                        <option value="harp">harp (String)</option>
+                        <option value="strings">strings (Ensemble)</option>
+                        <option value="flute">flute (Woodwind)</option>
+                        <option value="brass">brass (Horn)</option>
+                        <option value="acoustic_kick">acoustic_kick</option>
+                        <option value="acoustic_snare">acoustic_snare</option>
+                        <option value="acoustic_hihat">acoustic_hihat</option>
+                      </optgroup>
+                      <optgroup label="Chiptune / Synth">
+                        <option value="square">square</option>
+                        <option value="sawtooth">sawtooth</option>
+                        <option value="triangle">triangle</option>
+                        <option value="sine">sine</option>
+                        <option value="fm">fm</option>
+                        <option value="noise">noise (drums)</option>
+                        <option value="kick">kick</option>
+                        <option value="snare">snare</option>
+                        <option value="hihat">hihat</option>
+                      </optgroup>
+                    </select>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1.2"
+                      step="0.05"
+                      value={ch.volume}
+                      onChange={(e) =>
+                        handleUpdateBgmChannel(ch.id, {
+                          volume: parseFloat(e.target.value),
+                        })
+                      }
+                      title={`Volume: ${Math.round(ch.volume * 100)}%`}
+                    />
+                  </div>
+
+                  {isAcousticMode && (
+                    <div className="sfx-bgm-channel-sub" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      <span>Pan</span>
+                      <input
+                        type="range"
+                        min="-0.8"
+                        max="0.8"
+                        step="0.1"
+                        value={ch.pan ?? 0}
+                        onChange={(e) =>
+                          handleUpdateBgmChannel(ch.id, {
+                            pan: parseFloat(e.target.value),
+                          })
+                        }
+                        title={`Stereo Pan: ${ch.pan ?? 0}`}
+                      />
+                      <span className="mono-value" style={{ fontSize: 9.5, width: 28, textAlign: 'right' }}>
+                        {(ch.pan ?? 0) === 0 ? 'C' : (ch.pan ?? 0) < 0 ? `L${Math.round(Math.abs(ch.pan ?? 0) * 10)}` : `R${Math.round((ch.pan ?? 0) * 10)}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="sfx-bgm-steps-grid">
+                  {ch.steps.slice(0, bgmStepCount).map((stepVal, sIdx) => {
+                    const isActive = stepVal && stepVal !== '-';
+                    const isSustain = stepVal === '~';
+                    const isBeatStart = sIdx % 4 === 0;
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        className={`sfx-step-cell ${isActive ? 'active' : ''} ${isSustain ? 'sustain' : ''} ${isBeatStart ? 'beat-start' : ''}`}
+                        onClick={() => handleToggleBgmStep(ch.id, sIdx)}
+                        title={`Step ${sIdx + 1}: ${stepVal || 'Rest'} (click to toggle)`}
+                      >
+                        {isActive ? stepVal : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {/* Master Bus Strip */}
+            {isAcousticMode ? (
+              <div className="sfx-master-strip" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Concert Hall Reverb (Stereo)</span>
+                    <span className="mono-value">{Math.round(hallReverb * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.7"
+                    step="0.05"
+                    value={hallReverb}
+                    onChange={(e) => setHallReverb(parseFloat(e.target.value))}
+                  />
+                </div>
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Analog Harmonic Warmth</span>
+                    <span className="mono-value">{Math.round(warmth * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.5"
+                    step="0.05"
+                    value={warmth}
+                    onChange={(e) => setWarmth(parseFloat(e.target.value))}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="sfx-master-strip">
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Master Overdrive</span>
+                    <span className="mono-value">
+                      {Math.round(masterEffects.masterDistortion * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.6"
+                    step="0.05"
+                    value={masterEffects.masterDistortion}
+                    onChange={(e) =>
+                      setMasterEffects((fx) => ({
+                        ...fx,
+                        masterDistortion: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Master Filter</span>
+                    <span className="mono-value">
+                      {masterEffects.masterFilter >= 20000
+                        ? 'Open'
+                        : `${masterEffects.masterFilter}Hz`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="500"
+                    max="20000"
+                    step="500"
+                    value={masterEffects.masterFilter}
+                    onChange={(e) =>
+                      setMasterEffects((fx) => ({
+                        ...fx,
+                        masterFilter: parseInt(e.target.value, 10),
+                      }))
+                    }
+                  />
+                </div>
+                <div className="slider-group">
+                  <div className="slider-label-row">
+                    <span>Master Space Reverb</span>
+                    <span className="mono-value">
+                      {Math.round(masterEffects.masterReverb * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.7"
+                    step="0.05"
+                    value={masterEffects.masterReverb}
+                    onChange={(e) =>
+                      setMasterEffects((fx) => ({
+                        ...fx,
+                        masterReverb: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Multi-Layer Track Rack */}
         {isLayeredMode && (
@@ -1278,7 +2868,31 @@ export default function SfxStudioPage() {
               style={{ padding: '3px 8px', fontSize: 11 }}
               onClick={() => setPresetTab('layered')}
             >
-              Multi-Layer Archetypes
+              Layered SFX
+            </button>
+            <button
+              type="button"
+              className={`sfx-tab-btn ${presetTab === 'orchestra' ? 'active' : ''}`}
+              style={{ padding: '3px 8px', fontSize: 11 }}
+              onClick={() => setPresetTab('orchestra')}
+            >
+              Real Orchestra
+            </button>
+            <button
+              type="button"
+              className={`sfx-tab-btn ${presetTab === 'acoustic' ? 'active' : ''}`}
+              style={{ padding: '3px 8px', fontSize: 11 }}
+              onClick={() => setPresetTab('acoustic')}
+            >
+              Acoustic Synth
+            </button>
+            <button
+              type="button"
+              className={`sfx-tab-btn ${presetTab === 'bgm' ? 'active' : ''}`}
+              style={{ padding: '3px 8px', fontSize: 11 }}
+              onClick={() => setPresetTab('bgm')}
+            >
+              BGM Chiptune
             </button>
             <button
               type="button"
@@ -1286,325 +2900,363 @@ export default function SfxStudioPage() {
               style={{ padding: '3px 8px', fontSize: 11 }}
               onClick={() => setPresetTab('single')}
             >
-              Single Presets
+              Single SFX
             </button>
           </div>
 
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1 }}>
-            {presetTab === 'layered'
-              ? layeredPresets.map((lp) => (
-                <button
-                  key={lp.id}
-                  type="button"
-                  className="sfx-preset-pill"
-                  onClick={() => loadLayeredPreset(lp)}
-                  title={lp.description}
-                >
-                  ✨ {lp.name}
-                </button>
-              ))
-              : presets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="sfx-preset-pill"
-                  onClick={() => loadSinglePreset(preset)}
-                  title={preset.description}
-                >
-                  {preset.name}
-                </button>
-              ))}
+            {presetTab === 'orchestra'
+              ? orchestraPresets.map((op, idx) => (
+                  <button
+                    key={op.id || `${op.songName}-${idx}`}
+                    type="button"
+                    className="sfx-preset-pill"
+                    onClick={() => loadOrchestraPreset(op)}
+                    title={op.description || `${op.bpm} BPM • ${op.key} • ${op.tracks.map((t) => t.instrument).join(', ')}`}
+                  >
+                    🎼 {op.songName || op.name}
+                  </button>
+                ))
+                : presetTab === 'acoustic'
+                  ? acousticPresets.map((ap) => (
+                    <button
+                      key={ap.id}
+                      type="button"
+                      className="sfx-preset-pill"
+                      onClick={() => loadAcousticPreset(ap)}
+                      title={ap.description}
+                    >
+                      🎻 {ap.name}
+                    </button>
+                  ))
+                : presetTab === 'bgm'
+                  ? bgmPresets.map((bp) => (
+                      <button
+                        key={bp.id}
+                        type="button"
+                        className="sfx-preset-pill"
+                        onClick={() => loadBgmPreset(bp)}
+                        title={bp.description}
+                      >
+                        🎵 {bp.name}
+                      </button>
+                    ))
+                  : presetTab === 'layered'
+                    ? layeredPresets.map((lp) => (
+                      <button
+                        key={lp.id}
+                        type="button"
+                        className="sfx-preset-pill"
+                        onClick={() => loadLayeredPreset(lp)}
+                        title={lp.description}
+                      >
+                        ✨ {lp.name}
+                      </button>
+                    ))
+                    : presets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className="sfx-preset-pill"
+                        onClick={() => loadSinglePreset(preset)}
+                        title={preset.description}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
           </div>
         </div>
 
         {/* Mathematical Controls Grid (Edits Selected Layer or Single Oscillator) */}
-        <div className="sfx-controls-grid">
-          {/* Box 1: Mathematical Waveform Oscillator */}
-          <div className="sfx-control-card">
-            <div className="card-header">
-              <span className="card-title">
-                1. Oscillator {isLayeredMode ? `(${selectedLayer.name})` : ''}
-              </span>
-              <span className="card-badge">{editorParams.waveform}</span>
-            </div>
+        {!isMusicMode && (
+          <div className="sfx-controls-grid">
+            {/* Box 1: Mathematical Waveform Oscillator */}
+            <div className="sfx-control-card">
+              <div className="card-header">
+                <span className="card-title">
+                  1. Oscillator {isLayeredMode ? `(${selectedLayer.name})` : ''}
+                </span>
+                <span className="card-badge">{editorParams.waveform}</span>
+              </div>
 
-            <div className="waveform-buttons-row">
-              {(['square', 'sine', 'sawtooth', 'triangle', 'noise', 'fm'] as const).map(
-                (w) => (
-                  <button
-                    key={w}
-                    type="button"
-                    className={`waveform-btn ${editorParams.waveform === w ? 'active' : ''}`}
-                    onClick={() => {
-                      handleParamChange((p) => ({ ...p, waveform: w }));
+              <div className="waveform-buttons-row">
+                {(['square', 'sine', 'sawtooth', 'triangle', 'noise', 'fm'] as const).map(
+                  (w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      className={`waveform-btn ${editorParams.waveform === w ? 'active' : ''}`}
+                      onClick={() => {
+                        handleParamChange((p) => ({ ...p, waveform: w }));
+                      }}
+                    >
+                      {w.toUpperCase()}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {editorParams.waveform === 'square' && (
+                <div className="slider-group" style={{ marginTop: 8 }}>
+                  <div className="slider-label-row">
+                    <span>Duty Cycle (Pulse Width)</span>
+                    <span className="mono-value">
+                      {Math.round((editorParams.dutyCycle ?? 0.5) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="0.9"
+                    step="0.05"
+                    value={editorParams.dutyCycle ?? 0.5}
+                    onChange={(e) => {
+                      handleParamChange((p) => ({
+                        ...p,
+                        dutyCycle: parseFloat(e.target.value),
+                      }));
                     }}
-                  >
-                    {w.toUpperCase()}
-                  </button>
-                )
+                  />
+                </div>
               )}
             </div>
 
-            {editorParams.waveform === 'square' && (
-              <div className="slider-group" style={{ marginTop: 8 }}>
+            {/* Box 2: Frequency & Pitch Sweep */}
+            <div className="sfx-control-card">
+              <div className="card-header">
+                <span className="card-title">2. Frequency & Pitch Slide</span>
+                <span className="card-badge">{editorParams.frequency} Hz</span>
+              </div>
+
+              <div className="slider-group">
                 <div className="slider-label-row">
-                  <span>Duty Cycle (Pulse Width)</span>
+                  <span>Base Frequency</span>
+                  <span className="mono-value">{editorParams.frequency} Hz</span>
+                </div>
+                <input
+                  type="range"
+                  min="40"
+                  max="3500"
+                  step="10"
+                  value={editorParams.frequency}
+                  onChange={(e) =>
+                    handleParamChange((p) => ({
+                      ...p,
+                      frequency: parseInt(e.target.value, 10),
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="slider-group">
+                <div className="slider-label-row">
+                  <span>Pitch Slide (Sweep)</span>
                   <span className="mono-value">
-                    {Math.round((editorParams.dutyCycle ?? 0.5) * 100)}%
+                    {editorParams.freqSlide > 0 ? '+' : ''}
+                    {editorParams.freqSlide} Hz/s
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0.1"
-                  max="0.9"
+                  min="-4500"
+                  max="3500"
+                  step="50"
+                  value={editorParams.freqSlide}
+                  onChange={(e) =>
+                    handleParamChange((p) => ({
+                      ...p,
+                      freqSlide: parseInt(e.target.value, 10),
+                    }))
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Box 3: ADSR Envelopes */}
+            <div className="sfx-control-card">
+              <div className="card-header">
+                <span className="card-title">3. ADSR Envelope</span>
+                <span className="card-badge">
+                  {(editorParams.duration || 0.25).toFixed(2)}s Duration
+                </span>
+              </div>
+
+              <div className="slider-group">
+                <div className="slider-label-row">
+                  <span>Layer Duration</span>
+                  <span className="mono-value">
+                    {(editorParams.duration || 0.25).toFixed(2)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="2.5"
                   step="0.05"
-                  value={editorParams.dutyCycle ?? 0.5}
-                  onChange={(e) => {
-                    handleParamChange((p) => ({
-                      ...p,
-                      dutyCycle: parseFloat(e.target.value),
-                    }));
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Box 2: Frequency & Pitch Sweep */}
-          <div className="sfx-control-card">
-            <div className="card-header">
-              <span className="card-title">2. Frequency & Pitch Slide</span>
-              <span className="card-badge">{editorParams.frequency} Hz</span>
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Base Frequency</span>
-                <span className="mono-value">{editorParams.frequency} Hz</span>
-              </div>
-              <input
-                type="range"
-                min="40"
-                max="3500"
-                step="10"
-                value={editorParams.frequency}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    frequency: parseInt(e.target.value, 10),
-                  }))
-                }
-              />
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Pitch Slide (Sweep)</span>
-                <span className="mono-value">
-                  {editorParams.freqSlide > 0 ? '+' : ''}
-                  {editorParams.freqSlide} Hz/s
-                </span>
-              </div>
-              <input
-                type="range"
-                min="-4500"
-                max="3500"
-                step="50"
-                value={editorParams.freqSlide}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    freqSlide: parseInt(e.target.value, 10),
-                  }))
-                }
-              />
-            </div>
-          </div>
-
-          {/* Box 3: ADSR Envelopes */}
-          <div className="sfx-control-card">
-            <div className="card-header">
-              <span className="card-title">3. ADSR Envelope</span>
-              <span className="card-badge">
-                {(editorParams.duration || 0.25).toFixed(2)}s Duration
-              </span>
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Layer Duration</span>
-                <span className="mono-value">
-                  {(editorParams.duration || 0.25).toFixed(2)}s
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.05"
-                max="2.5"
-                step="0.05"
-                value={editorParams.duration}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    duration: parseFloat(e.target.value),
-                  }))
-                }
-              />
-            </div>
-
-            <div className="adsr-grid">
-              <div className="slider-subgroup">
-                <span className="subgroup-label">
-                  Attack ({(editorParams.attack * 1000).toFixed(0)}ms)
-                </span>
-                <input
-                  type="range"
-                  min="0.001"
-                  max="0.4"
-                  step="0.005"
-                  value={editorParams.attack}
+                  value={editorParams.duration}
                   onChange={(e) =>
                     handleParamChange((p) => ({
                       ...p,
-                      attack: parseFloat(e.target.value),
+                      duration: parseFloat(e.target.value),
                     }))
                   }
                 />
               </div>
 
-              <div className="slider-subgroup">
-                <span className="subgroup-label">
-                  Decay ({(editorParams.decay * 1000).toFixed(0)}ms)
-                </span>
+              <div className="adsr-grid">
+                <div className="slider-subgroup">
+                  <span className="subgroup-label">
+                    Attack ({(editorParams.attack * 1000).toFixed(0)}ms)
+                  </span>
+                  <input
+                    type="range"
+                    min="0.001"
+                    max="0.4"
+                    step="0.005"
+                    value={editorParams.attack}
+                    onChange={(e) =>
+                      handleParamChange((p) => ({
+                        ...p,
+                        attack: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="slider-subgroup">
+                  <span className="subgroup-label">
+                    Decay ({(editorParams.decay * 1000).toFixed(0)}ms)
+                  </span>
+                  <input
+                    type="range"
+                    min="0.01"
+                    max="0.8"
+                    step="0.01"
+                    value={editorParams.decay}
+                    onChange={(e) =>
+                      handleParamChange((p) => ({
+                        ...p,
+                        decay: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="slider-subgroup">
+                  <span className="subgroup-label">
+                    Sustain ({Math.round(editorParams.sustain * 100)}%)
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={editorParams.sustain}
+                    onChange={(e) =>
+                      handleParamChange((p) => ({
+                        ...p,
+                        sustain: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="slider-subgroup">
+                  <span className="subgroup-label">
+                    Release ({(editorParams.release * 1000).toFixed(0)}ms)
+                  </span>
+                  <input
+                    type="range"
+                    min="0.01"
+                    max="1.0"
+                    step="0.01"
+                    value={editorParams.release}
+                    onChange={(e) =>
+                      handleParamChange((p) => ({
+                        ...p,
+                        release: parseFloat(e.target.value),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Box 4: DSP Filters & Effects */}
+            <div className="sfx-control-card">
+              <div className="card-header">
+                <span className="card-title">4. Filters & Post-Processing</span>
+                <span className="card-badge">Effects</span>
+              </div>
+
+              <div className="slider-group">
+                <div className="slider-label-row">
+                  <span>Low-Pass Cutoff</span>
+                  <span className="mono-value">
+                    {editorParams.filterCutoff || 20000} Hz
+                  </span>
+                </div>
                 <input
                   type="range"
-                  min="0.01"
-                  max="0.8"
-                  step="0.01"
-                  value={editorParams.decay}
+                  min="400"
+                  max="20000"
+                  step="200"
+                  value={editorParams.filterCutoff || 20000}
                   onChange={(e) =>
                     handleParamChange((p) => ({
                       ...p,
-                      decay: parseFloat(e.target.value),
+                      filterCutoff: parseInt(e.target.value, 10),
                     }))
                   }
                 />
               </div>
 
-              <div className="slider-subgroup">
-                <span className="subgroup-label">
-                  Sustain ({Math.round(editorParams.sustain * 100)}%)
-                </span>
+              <div className="slider-group">
+                <div className="slider-label-row">
+                  <span>Layer Distortion</span>
+                  <span className="mono-value">
+                    {Math.round((editorParams.distortion || 0) * 100)}%
+                  </span>
+                </div>
                 <input
                   type="range"
                   min="0"
                   max="1"
                   step="0.05"
-                  value={editorParams.sustain}
+                  value={editorParams.distortion || 0}
                   onChange={(e) =>
                     handleParamChange((p) => ({
                       ...p,
-                      sustain: parseFloat(e.target.value),
+                      distortion: parseFloat(e.target.value),
                     }))
                   }
                 />
               </div>
 
-              <div className="slider-subgroup">
-                <span className="subgroup-label">
-                  Release ({(editorParams.release * 1000).toFixed(0)}ms)
-                </span>
+              <div className="slider-group">
+                <div className="slider-label-row">
+                  <span>Comb Reverb</span>
+                  <span className="mono-value">
+                    {Math.round((editorParams.reverb || 0) * 100)}%
+                  </span>
+                </div>
                 <input
                   type="range"
-                  min="0.01"
-                  max="1.0"
-                  step="0.01"
-                  value={editorParams.release}
+                  min="0"
+                  max="0.75"
+                  step="0.05"
+                  value={editorParams.reverb || 0}
                   onChange={(e) =>
                     handleParamChange((p) => ({
                       ...p,
-                      release: parseFloat(e.target.value),
+                      reverb: parseFloat(e.target.value),
                     }))
                   }
                 />
               </div>
             </div>
           </div>
-
-          {/* Box 4: DSP Filters & Effects */}
-          <div className="sfx-control-card">
-            <div className="card-header">
-              <span className="card-title">4. Filters & Post-Processing</span>
-              <span className="card-badge">Effects</span>
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Low-Pass Cutoff</span>
-                <span className="mono-value">
-                  {editorParams.filterCutoff || 20000} Hz
-                </span>
-              </div>
-              <input
-                type="range"
-                min="400"
-                max="20000"
-                step="200"
-                value={editorParams.filterCutoff || 20000}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    filterCutoff: parseInt(e.target.value, 10),
-                  }))
-                }
-              />
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Layer Distortion</span>
-                <span className="mono-value">
-                  {Math.round((editorParams.distortion || 0) * 100)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={editorParams.distortion || 0}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    distortion: parseFloat(e.target.value),
-                  }))
-                }
-              />
-            </div>
-
-            <div className="slider-group">
-              <div className="slider-label-row">
-                <span>Comb Reverb</span>
-                <span className="mono-value">
-                  {Math.round((editorParams.reverb || 0) * 100)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="0.75"
-                step="0.05"
-                value={editorParams.reverb || 0}
-                onChange={(e) =>
-                  handleParamChange((p) => ({
-                    ...p,
-                    reverb: parseFloat(e.target.value),
-                  }))
-                }
-              />
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

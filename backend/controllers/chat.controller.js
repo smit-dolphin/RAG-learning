@@ -123,9 +123,10 @@ function parseChatParams(req) {
   const strictDocs = rawStrict === true || rawStrict === 'true';
   const rawAgentic = req.body?.agentic ?? req.query?.agentic;
   const mode = typeof req.body?.mode === 'string' ? req.body.mode : typeof req.query?.mode === 'string' ? req.query.mode : 'rag';
+  const subMode = typeof req.body?.subMode === 'string' ? req.body.subMode : typeof req.query?.subMode === 'string' ? req.query.subMode : undefined;
   const agentic = rawAgentic === true || rawAgentic === 'true' || mode === 'sfx';
   const history = Array.isArray(req.body?.history) ? req.body.history : [];
-  return { message, minScore, topK, allowedDocIds, strictDocs, agentic, history, mode };
+  return { message, minScore, topK, allowedDocIds, strictDocs, agentic, history, mode, subMode };
 }
 
 /**
@@ -151,6 +152,7 @@ async function handleChat(req, res) {
       agentic,
       history,
       mode,
+      subMode,
     } = parseChatParams(req);
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'message is required' });
@@ -164,10 +166,12 @@ async function handleChat(req, res) {
         strictDocs,
         minScore,
         mode,
+        subMode,
       });
 
       return res.json({
         reply: result.reply,
+        thought: result.thought || '',
         sources: result.sources,
         grounded: result.grounded,
         agentic: true,
@@ -212,6 +216,7 @@ async function handleChatStream(req, res) {
     agentic,
     history,
     mode,
+    subMode,
   } = parseChatParams(req);
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'message is required' });
@@ -239,7 +244,9 @@ async function handleChatStream(req, res) {
         strictDocs,
         minScore,
         mode,
+        subMode,
         shouldAbort: () => clientClosed,
+        onThought: (text) => sendSseEvent(res, 'thought', { text }),
         onTool: (toolCall) => sendSseEvent(res, 'tool', toolCall),
         onToolResult: (toolResult) => sendSseEvent(res, 'tool_result', toolResult),
         onSources: (sources, grounded) =>

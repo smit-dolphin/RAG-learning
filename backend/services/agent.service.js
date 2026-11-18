@@ -4,22 +4,24 @@ const { ragToolDeclarations, executeRagTool } = require('../agents/tool');
 /**
  * Build the system instruction for the Agentic RAG assistant or SFX Studio.
  */
-function buildAgentSystemInstruction({ isScoped, strictDocs, mode }) {
+function buildAgentSystemInstruction({ isScoped, strictDocs, mode, subMode }) {
   if (mode === 'sfx') {
+    const acousticEmphasis =
+      subMode === 'orchestra'
+        ? 'ACTIVE TAB: REAL SAMPLED ORCHESTRA MODE (`smplr` SoundFonts) — Prioritize `compose_real_music_score` with real sampled GM instruments (`SplendidGrandPiano`, `cello`, `violin`, `viola`, `string_ensemble_1`, `tremolo_strings`, `pizzicato_strings`, `orchestral_harp`, `church_organ`, `harpsichord`, `choir_aahs`, `flute`, `oboe`, `french_horn`, `trumpet`, `acoustic_guitar_nylon`, `electric_piano_1`, `acoustic_bass`, `marimba`, `timpani`, `TR-808`). Express beats (`beat`), sustained `durationBeats`, MIDI `velocity` (20-127), stereo `pan`, and rich musical polyphony.'
+        : subMode === 'acoustic'
+        ? 'ACTIVE TAB: ACOUSTIC STUDIO MODE — Prioritize `compose_acoustic_music` with realistic physical-modeling instruments (`piano`, `guitar`, `strings`, `flute`, `brass`, `epiano`, `harp`, `acoustic_kick`, `acoustic_snare`, `acoustic_hihat`), polyphonic chords (`"Am"`, `"Fmaj7"`, `"C4+E4+G4"`), stereo panning, and concert hall reverb.'
+        : 'Choose `compose_real_music_score` when the user wants full studio/orchestral sampled instruments (`smplr`), `compose_acoustic_music` for physical-modeling DSP instruments, `compose_bgm_loop` for chiptune/retro/synthwave BGM, and `synthesize_layered_sfx` / `synthesize_math_sfx` / `blend_sfx_presets` for sound effects.';
+
     return [
-      'You are VectorMind SFX Studio Audio Engineer, an expert procedural game sound designer, DSP architect, and synthesizer programmer.',
+      'You are VectorMind SFX, BGM & Real Orchestra Audio Architect, an expert procedural sound designer, orchestral/chiptune composer, and studio arranger.',
       'CRITICAL TOOL USAGE RULES:',
-      '- Whenever the user asks for a game sound, requests sound combinations, or asks you to engineer new acoustic solutions, you MUST execute a tool call (`synthesize_math_sfx`, `synthesize_layered_sfx`, or `blend_sfx_presets`). Never output raw XML, HTML, or code blocks in text instead of calling tools.',
-      '- FOR SIMPLE SOUNDS: Call `synthesize_math_sfx` with mathematical parameters (waveform, frequency, freqSlide, ADSR envelope, filterCutoff, distortion, bitCrush, vibrato, etc.).',
-      '- FOR COMPOSITE / MULTI-PART / LAYERED SOUNDS (or when combining sounds or coming up with new solutions):',
-      '  Call `synthesize_layered_sfx` to build a 2 to 4 layer audio stack:',
-      '  * Layer 1: Transient / Attack Punch (sharp 0.05-0.15s attack hit, e.g. square/triangle high-pitch downward sweep).',
-      '  * Layer 2: Body / Core Timbre (tonal sweep, e.g. sawtooth or FM frequency modulation).',
-      '  * Layer 3: Texture / Sub Rumble / Spatial Tail (low sub-bass sine 45-60Hz or filtered noise crackle with reverb, with optional delay offset).',
-      '  * For sequential or charging sounds (e.g. railgun charge -> blast, or arpeggiated powerup chime), set `delay` on subsequent layers (e.g. 0.0s, 0.15s, 0.30s).',
-      '- TO COMBINE / FUSE KNOWN SOUNDS: You can call `blend_sfx_presets` with `presetIds` and balance ("parallel", "sequential", or "transient_body").',
-      '- In your final concise response, explain the mathematical DSP layers and acoustic synergy you designed.',
-      '- Tell the user the multi-layer stack and waveform are loaded into the center editor where they can tweak individual layers, solo/preview them, and download the composite WAV.',
+      '- Whenever the user asks for a sound, SFX combination, chiptune loop, acoustic music, or orchestral score, you MUST execute a tool call (`compose_real_music_score`, `compose_acoustic_music`, `compose_bgm_loop`, `synthesize_layered_sfx`, `synthesize_math_sfx`, or `blend_sfx_presets`). Never output raw XML, HTML, or code blocks in text instead of calling tools.',
+      `- ${acousticEmphasis}`,
+      '- FOR REALISTIC / ACOUSTIC MUSIC (`compose_acoustic_music`): Use `piano`, `epiano`, `guitar` (Karplus-Strong plucked string), `harp`, `strings` (ensemble violin/cello), `flute`, `brass` (French horn), and `acoustic_kick` / `acoustic_snare` / `acoustic_hihat`. Include `pan` (-0.8 to +0.8), `hallReverb` (0.3-0.5), `warmth`, and polyphonic chords (`"Am"`, `"Fmaj7"`, `"C4+E4+G4"`) or `~` holds.',
+      '- FOR RETRO / CHIPTUNE / SYNTH BGM (`compose_bgm_loop`): Use `square`, `sawtooth`, `triangle`, `sine`, `fm`, and `"K"`/`"S"`/`"H"` chip drums.',
+      '- FOR SFX (`synthesize_layered_sfx`, `synthesize_math_sfx`, `blend_sfx_presets`): Design 2-4 acoustic layers or single oscillator DSP parameters.',
+      '- In your final concise response, explain the musical/physical-modeling choices you made and let the user know it is loaded in the live editor/studio.',
     ].join('\n');
   }
 
@@ -89,6 +91,117 @@ function mergeSources(existing, incoming) {
 }
 
 /**
+ * Build the acoustic planning prompt executed before any SFX / BGM / Acoustic synthesis tool runs.
+ */
+function buildSfxPlanningInstruction(subMode) {
+  const modeHint =
+    subMode === 'orchestra'
+      ? 'USER IS IN REAL SAMPLED ORCHESTRA MODE: Design a rich multi-instrument studio score for `compose_real_music_score` using sampled instruments (`SplendidGrandPiano`, `cello`, `violin`, `orchestral_harp`, `church_organ`, `harpsichord`, `choir_aahs`, `flute`, `french_horn`, `timpani`, etc.) with exact `beat`, `durationBeats`, and `velocity` phrasing.'
+      : subMode === 'acoustic'
+      ? 'USER IS IN ACOUSTIC STUDIO MODE: Design for realistic physical-modeling instruments (`compose_acoustic_music`: piano, guitar, harp, strings, flute, brass, acoustic drums) with chord progression, stereo panning, and hall reverb.'
+      : 'Choose `compose_real_music_score` (sampled GM studio/orchestral scores), `compose_acoustic_music` (physical-modeling DSP music), `compose_bgm_loop` (chiptune/synth BGM loops), `synthesize_layered_sfx` (multi-part SFX), `blend_sfx_presets`, or `synthesize_math_sfx` (single SFX).';
+
+  return [
+    'You are the Acoustic & Musical Planning engine for VectorMind SFX, BGM & Acoustic Studio.',
+    'Before generating audio, reason concisely (3-5 crisp bullet points, under 130 words) about the design:',
+    '1. Acoustic / Musical Profile: Describe the target mood, timbre, physics, or genre.',
+    `2. Architecture Choice: ${modeHint}`,
+    '3. Mathematical / Musical Blueprint: For Acoustic/BGM music, specify BPM, musical Key/Scale, chord progression, stereo placement, and 3-4 channels. For SFX, specify waveforms, Hz ranges, pitch slides, ADSR envelopes, delays, and filters.',
+    'Do NOT output code blocks, XML, or greetings—only the concise technical plan.',
+  ].join('\n');
+}
+
+function isTransientModelError(err) {
+  return (
+    err?.status === 503 ||
+    err?.status === 429 ||
+    err?.message?.includes('503') ||
+    err?.message?.includes('high demand')
+  );
+}
+
+/**
+ * Call Gemini generateContent with a single retry on transient 503/429 spikes.
+ */
+async function generateWithRetry({ contents, config }) {
+  try {
+    return await ai.models.generateContent({
+      model: GEMINI_CHAT_MODEL,
+      contents,
+      config,
+    });
+  } catch (err) {
+    if (!isTransientModelError(err)) throw err;
+    await new Promise((r) => setTimeout(r, 1000));
+    return ai.models.generateContent({
+      model: GEMINI_CHAT_MODEL,
+      contents,
+      config,
+    });
+  }
+}
+
+/**
+ * Strip binary base64 audio payloads from tool results before passing back to Gemini context.
+ */
+function sanitizeToolResultForModel(result) {
+  const modelResult = { ...result };
+  if (modelResult.dataUri) {
+    modelResult.dataUri = '[audio/wav generated successfully]';
+  }
+  if (Array.isArray(modelResult.layers)) {
+    modelResult.layers = modelResult.layers.map((l) => ({
+      name: l.name,
+      delay: l.delay,
+      volume: l.volume,
+      waveform: l.waveform,
+      frequency: l.frequency,
+      duration: l.duration,
+      params: l.params,
+    }));
+  }
+  return modelResult;
+}
+
+/**
+ * Stream an acoustic planning & reasoning pass before executing SFX synthesis tools.
+ */
+async function generateSfxDesignPlan({ contents, subMode, onThought, shouldAbort }) {
+  const config = {
+    systemInstruction: buildSfxPlanningInstruction(subMode),
+    maxOutputTokens: 320,
+  };
+
+  let stream;
+  try {
+    stream = await ai.models.generateContentStream({
+      model: GEMINI_CHAT_MODEL,
+      contents,
+      config,
+    });
+  } catch (err) {
+    if (!isTransientModelError(err)) throw err;
+    await new Promise((r) => setTimeout(r, 1000));
+    stream = await ai.models.generateContentStream({
+      model: GEMINI_CHAT_MODEL,
+      contents,
+      config,
+    });
+  }
+
+  let planText = '';
+  for await (const chunk of stream) {
+    if (shouldAbort?.()) break;
+    const text = chunk?.text || '';
+    if (text) {
+      planText += text;
+      onThought?.(text);
+    }
+  }
+  return planText.trim();
+}
+
+/**
  * Run the Agentic RAG / SFX reasoning + tool-calling loop.
  */
 async function runAgentChat({
@@ -99,6 +212,8 @@ async function runAgentChat({
   minScore,
   maxSteps = 4,
   mode = 'rag',
+  subMode,
+  onThought,
   onTool,
   onToolResult,
   onSources,
@@ -106,19 +221,50 @@ async function runAgentChat({
   shouldAbort,
 }) {
   const isScoped = Array.isArray(allowedDocIds) && allowedDocIds.length > 0;
-  const systemInstruction = buildAgentSystemInstruction({ isScoped, strictDocs, mode });
+  const systemInstruction = buildAgentSystemInstruction({ isScoped, strictDocs, mode, subMode });
   const contents = formatHistoryContents(history, message);
 
   let collectedSources = [];
   const toolExecutions = [];
   let finalReply = '';
+  let thoughtText = '';
+
+  // Pre-generation planning & reasoning step for SFX mode
+  if (mode === 'sfx' && !shouldAbort?.()) {
+    try {
+      thoughtText = await generateSfxDesignPlan({ contents, subMode, onThought, shouldAbort });
+      if (thoughtText) {
+        contents.push({
+          role: 'model',
+          parts: [{ text: `Acoustic Design Plan:\n${thoughtText}` }],
+        });
+        contents.push({
+          role: 'user',
+          parts: [
+            {
+              text: 'Now execute the appropriate audio tool (`compose_real_music_score`, `compose_acoustic_music`, `compose_bgm_loop`, `synthesize_layered_sfx`, `synthesize_math_sfx`, or `blend_sfx_presets`) using the exact blueprint in your plan above.',
+            },
+          ],
+        });
+      }
+    } catch (planErr) {
+      // Planning failure should not block sound generation; proceed directly to tool loop.
+      console.warn('SFX planning step skipped:', planErr.message);
+    }
+  }
 
   for (let step = 0; step < maxSteps; step++) {
     if (shouldAbort?.()) break;
 
     const activeTools =
       mode === 'sfx'
-        ? ragToolDeclarations.filter((t) => t.name.includes('sfx'))
+        ? ragToolDeclarations.filter(
+            (t) =>
+              t.name.includes('sfx') ||
+              t.name.includes('bgm') ||
+              t.name.includes('acoustic') ||
+              t.name.includes('real_music')
+          )
         : ragToolDeclarations;
 
     const config = {
@@ -134,31 +280,7 @@ async function runAgentChat({
       };
     }
 
-    let response;
-    try {
-      response = await ai.models.generateContent({
-        model: GEMINI_CHAT_MODEL,
-        contents,
-        config,
-      });
-    } catch (apiErr) {
-      if (
-        apiErr?.status === 503 ||
-        apiErr?.status === 429 ||
-        apiErr?.message?.includes('503') ||
-        apiErr?.message?.includes('high demand')
-      ) {
-        await new Promise((r) => setTimeout(r, 1000));
-        response = await ai.models.generateContent({
-          model: GEMINI_CHAT_MODEL,
-          contents,
-          config,
-        });
-      } else {
-        throw apiErr;
-      }
-    }
-
+    const response = await generateWithRetry({ contents, config });
     const functionCalls = response.functionCalls;
 
     if (Array.isArray(functionCalls) && functionCalls.length > 0) {
@@ -188,27 +310,10 @@ async function runAgentChat({
           onSources?.(collectedSources, true);
         }
 
-        // Sanitize result for model context (avoid stuffing 100KB+ base64 audio into Gemini tokens)
-        const modelResult = { ...result };
-        if (modelResult.dataUri) {
-          modelResult.dataUri = '[audio/wav generated successfully]';
-        }
-        if (Array.isArray(modelResult.layers)) {
-          modelResult.layers = modelResult.layers.map((l) => ({
-            name: l.name,
-            delay: l.delay,
-            volume: l.volume,
-            waveform: l.waveform,
-            frequency: l.frequency,
-            duration: l.duration,
-            params: l.params,
-          }));
-        }
-
         functionResponseParts.push({
           functionResponse: {
             name: call.name,
-            response: modelResult,
+            response: sanitizeToolResultForModel(result),
           },
         });
       }
@@ -228,6 +333,7 @@ async function runAgentChat({
 
     return {
       reply: finalReply,
+      thought: thoughtText,
       sources: collectedSources,
       grounded: collectedSources.length > 0,
       steps: step + 1,
@@ -255,6 +361,7 @@ async function runAgentChat({
 
   return {
     reply: finalReply,
+    thought: thoughtText,
     sources: collectedSources,
     grounded: collectedSources.length > 0,
     steps: maxSteps,
