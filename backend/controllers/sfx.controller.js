@@ -11,6 +11,7 @@ const {
   ACOUSTIC_MUSIC_PRESETS,
   ORCHESTRA_PRESETS,
 } = require('../agents/sfxPresetData');
+const { buildRealMusicScore } = require('../agents/tool');
 
 /**
  * POST /sfx/synthesize — Synthesize audio directly from mathematical parameter sets.
@@ -91,7 +92,14 @@ function handleGetPresets(req, res) {
       layeredPresets: LAYERED_SFX_PRESETS,
       bgmPresets: BGM_PRESETS,
       acousticPresets: ACOUSTIC_MUSIC_PRESETS,
-      orchestraPresets: ORCHESTRA_PRESETS,
+      orchestraPresets: ORCHESTRA_PRESETS.map((p) =>
+        Array.isArray(p.sections)
+          ? {
+              ...p,
+              ...buildRealMusicScore(p),
+            }
+          : p
+      ),
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

@@ -428,11 +428,101 @@ const ragToolDeclarations = [
         },
         totalBeats: {
           type: Type.INTEGER,
-          description: 'Total length in beats (16 = 4 bars of 4/4, 32 = 8 bars).',
+          description: 'Total length in beats (16 = 4 bars, 64 = 16 bars, 192-256 = full 2-minute evolving arrangement, max 320).',
+        },
+        sections: {
+          type: Type.ARRAY,
+          description:
+            'Recommended for full 1-to-3 minute non-repetitive themes: sequential song sections (e.g., "Intro", "Verse A", "Build-Up", "The Drop", "Bridge", "Outro"). Each section places its tracks at its beat offset and modulates dynamics.',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: {
+                type: Type.STRING,
+                description: 'Section label (e.g. "1. Piano Intro", "3. Riser Build-Up", "4. Cathedral Drop").',
+              },
+              startBeat: {
+                type: Type.NUMBER,
+                description: 'Optional beat offset; auto-stacked sequentially after the previous section if omitted.',
+              },
+              lengthBeats: {
+                type: Type.NUMBER,
+                description: 'Duration of this section in beats (e.g. 16, 24, 32, 48, 64).',
+              },
+              energy: {
+                type: Type.NUMBER,
+                description: 'Dynamic loudness multiplier for this section (0.45 delicate intro to 1.2 forte climax).',
+              },
+              tracks: {
+                type: Type.ARRAY,
+                description: 'Instruments active in this section with beat offsets relative to section start (0..lengthBeats).',
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    instrument: { type: Type.STRING },
+                    volume: { type: Type.NUMBER },
+                    pan: { type: Type.NUMBER },
+                    repeatCount: {
+                      type: Type.INTEGER,
+                      description: 'Optional repeat count (1-8) for rhythmic ostinato/drum patterns over patternBeats while melody tracks evolve freely.',
+                    },
+                    patternBeats: {
+                      type: Type.NUMBER,
+                      description: 'Loop stride in beats when repeatCount > 1 (e.g. 4, 8, or 16).',
+                    },
+                    notes: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          beat: { type: Type.NUMBER },
+                          note: { type: Type.STRING },
+                          durationBeats: { type: Type.NUMBER },
+                          velocity: { type: Type.INTEGER },
+                        },
+                        required: ['beat', 'note', 'durationBeats'],
+                      },
+                    },
+                  },
+                  required: ['name', 'instrument', 'notes'],
+                },
+              },
+            },
+            required: ['name', 'lengthBeats', 'tracks'],
+          },
+        },
+        transitions: {
+          type: Type.ARRAY,
+          description:
+            'Hybrid Web Audio sweeps and cinematic impacts synchronized with `smplr` beats for real build-ups and drops.',
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              type: {
+                type: Type.STRING,
+                enum: ['riser', 'reverse_cymbal', 'sub_drop', 'crash_impact'],
+                description: 'riser (filtered noise + synth sweep upward), reverse_cymbal (metallic crescendo into drop), sub_drop (808 bass dive on drop beat), crash_impact (boom + shimmer hit).',
+              },
+              beat: {
+                type: Type.NUMBER,
+                description: 'Beat where the transition starts (risers/reverse_cymbals peak at beat + durationBeats).',
+              },
+              durationBeats: {
+                type: Type.NUMBER,
+                description: 'Sweep/decay length in beats (e.g. 8 or 16 for a build riser, 4 for sub_drop).',
+              },
+              intensity: {
+                type: Type.NUMBER,
+                description: 'Mix intensity 0.2 to 1.0.',
+              },
+            },
+            required: ['type', 'beat', 'durationBeats'],
+          },
         },
         tracks: {
           type: Type.ARRAY,
-          description: 'Array of 2 to 6 real sampled instrument tracks.',
+          description: 'Flat track array (use for short cues or when not using `sections`).',
           items: {
             type: Type.OBJECT,
             properties: {
@@ -483,7 +573,7 @@ const ragToolDeclarations = [
           },
         },
       },
-      required: ['songName', 'bpm', 'tracks'],
+      required: ['songName', 'bpm'],
     },
   },
 ];
@@ -497,39 +587,34 @@ function freqToPitchName(freq) {
   return `${PITCH_NAMES[clamped % 12]}${octave}`;
 }
 
-/**
- * Validate and normalize an AI-authored musical score for frontend `smplr` SoundFont playback.
- */
-function buildRealMusicScore(args = {}) {
-  const bpm = Math.min(Math.max(Number(args.bpm) || 90, 45), 195);
-  const beatSec = 60 / bpm;
-  const reverb = Math.min(Math.max(Number(args.reverb ?? 0.42), 0), 0.75);
-  const rawTracks = Array.isArray(args.tracks) ? args.tracks : [];
-  let maxEndBeat = Math.min(Math.max(Number(args.totalBeats) || 16, 8), 64);
+const VALID_TRANSITION_TYPES = new Set(['riser', 'reverse_cymbal', 'sub_drop', 'crash_impact']);
 
-  const tracks = rawTracks.map((tr, idx) => {
-    const instrument = String(tr.instrument || 'SplendidGrandPiano').trim();
-    const isDrumKit = /tr-808|casio|lm-2|mfb|roland/i.test(instrument);
-    const volume = Math.min(Math.max(Number(tr.volume ?? 0.85), 0.1), 1.3);
-    const pan = Math.min(Math.max(Number(tr.pan ?? 0), -0.9), 0.9);
-    const rawNotes = Array.isArray(tr.notes) ? tr.notes : [];
+function expandOrchestraNotes(rawNotes, beatSec, beatOffset, energyScale, isDrumKit, repeatCount = 1, patternBeats = 0) {
+  const expanded = [];
+  const safeRepeat = Math.min(Math.max(Math.round(Number(repeatCount) || 1), 1), 12);
+  let inferredSpan = 0;
+  for (const ev of rawNotes) {
+    if (!ev) continue;
+    const bEnd = (Number(ev.beat) || 0) + (Number(ev.durationBeats) || 0.5);
+    if (bEnd > inferredSpan) inferredSpan = bEnd;
+  }
+  const stride = Number(patternBeats) > 0 ? Number(patternBeats) : Math.max(4, Math.ceil(inferredSpan));
 
-    const expandedNotes = [];
+  for (let rep = 0; rep < safeRepeat; rep++) {
+    const repOffset = beatOffset + rep * stride;
     for (const ev of rawNotes) {
       if (!ev || ev.note === undefined || ev.note === null) continue;
-      const beat = Math.max(0, Number(ev.beat) || 0);
+      const beat = Math.max(0, repOffset + (Number(ev.beat) || 0));
+      if (beat >= 320) continue;
       const durationBeats = Math.min(Math.max(Number(ev.durationBeats) || 0.5, 0.1), 16);
-      const velocity = Math.min(Math.max(Math.round(Number(ev.velocity ?? 82)), 20), 127);
-      const endBeat = beat + durationBeats;
-      if (endBeat > maxEndBeat && endBeat <= 64) {
-        maxEndBeat = Math.ceil(endBeat);
-      }
+      const rawVel = Number(ev.velocity ?? 82) * energyScale;
+      const velocity = Math.min(Math.max(Math.round(rawVel), 20), 127);
 
       const rawToken = String(ev.note).trim();
       if (!rawToken || rawToken === '-' || rawToken === 'rest') continue;
 
       if (isDrumKit) {
-        expandedNotes.push({
+        expanded.push({
           beat,
           durationBeats,
           time: beat * beatSec,
@@ -541,7 +626,7 @@ function buildRealMusicScore(args = {}) {
       }
 
       if (/^[A-Ga-g][#b]?-?\d$/.test(rawToken)) {
-        expandedNotes.push({
+        expanded.push({
           beat,
           durationBeats,
           time: beat * beatSec,
@@ -553,7 +638,7 @@ function buildRealMusicScore(args = {}) {
         for (const part of rawToken.split(/[+/]/)) {
           const cleaned = part.trim();
           if (cleaned) {
-            expandedNotes.push({
+            expanded.push({
               beat,
               durationBeats,
               time: beat * beatSec,
@@ -566,7 +651,7 @@ function buildRealMusicScore(args = {}) {
       } else {
         const freqs = parseStepFrequencies(rawToken);
         for (const f of freqs) {
-          expandedNotes.push({
+          expanded.push({
             beat,
             durationBeats,
             time: beat * beatSec,
@@ -577,29 +662,136 @@ function buildRealMusicScore(args = {}) {
         }
       }
     }
+  }
+  return expanded;
+}
 
-    return {
-      id: tr.id || `orch-tr-${idx + 1}-${Date.now().toString(36)}`,
-      name: tr.name || `Instrument ${idx + 1}`,
-      instrument,
-      volume,
-      pan,
-      muted: false,
-      notes: expandedNotes,
-    };
-  });
+/**
+ * Validate and normalize an AI-authored musical score (supports flat tracks AND multi-section 2-3 min arrangements + transitions).
+ */
+function buildRealMusicScore(args = {}) {
+  const bpm = Math.min(Math.max(Number(args.bpm) || 90, 45), 195);
+  const beatSec = 60 / bpm;
+  const reverb = Math.min(Math.max(Number(args.reverb ?? 0.42), 0), 0.75);
+  const MAX_BEATS = 320;
+  let maxEndBeat = Math.min(Math.max(Number(args.totalBeats) || 16, 8), MAX_BEATS);
+
+  const trackMap = new Map();
+  const upsertTrackEvents = (tr, beatOffset, energyScale) => {
+    const instrument = String(tr.instrument || 'SplendidGrandPiano').trim();
+    const isDrumKit = /tr-808|casio|lm-2|mfb|roland/i.test(instrument);
+    const volume = Math.min(Math.max(Number(tr.volume ?? 0.85), 0.1), 1.3);
+    const pan = Math.min(Math.max(Number(tr.pan ?? 0), -0.9), 0.9);
+    const trackName = String(tr.name || instrument).trim();
+    const rawNotes = Array.isArray(tr.notes) ? tr.notes : [];
+
+    const events = expandOrchestraNotes(
+      rawNotes,
+      beatSec,
+      beatOffset,
+      energyScale,
+      isDrumKit,
+      tr.repeatCount,
+      tr.patternBeats
+    );
+
+    for (const ev of events) {
+      const endBeat = ev.beat + ev.durationBeats;
+      if (endBeat > maxEndBeat && endBeat <= MAX_BEATS) {
+        maxEndBeat = Math.ceil(endBeat);
+      }
+    }
+
+    const key = `${instrument}::${trackName.toLowerCase()}`;
+    if (!trackMap.has(key)) {
+      trackMap.set(key, {
+        id: tr.id || `orch-tr-${trackMap.size + 1}-${Date.now().toString(36)}`,
+        name: trackName,
+        instrument,
+        volume,
+        pan,
+        muted: false,
+        notes: [],
+      });
+    }
+    trackMap.get(key).notes.push(...events);
+  };
+
+  // 1. Optional flat tracks array (beat offset 0)
+  const rawTracks = Array.isArray(args.tracks) ? args.tracks : [];
+  for (const tr of rawTracks) {
+    upsertTrackEvents(tr, 0, 1.0);
+  }
+
+  // 2. Optional sequential song sections (Intro -> Build -> Drop -> Bridge -> Outro)
+  const rawSections = Array.isArray(args.sections) ? args.sections : [];
+  const normalizedSections = [];
+  let cursorBeat = 0;
+
+  for (let sIdx = 0; sIdx < rawSections.length; sIdx++) {
+    const sec = rawSections[sIdx];
+    if (!sec) continue;
+    const startBeat =
+      sec.startBeat !== undefined && sec.startBeat !== null
+        ? Math.max(0, Number(sec.startBeat) || 0)
+        : cursorBeat;
+    const lengthBeats = Math.min(Math.max(Number(sec.lengthBeats) || 16, 4), 96);
+    const endBeat = Math.min(MAX_BEATS, startBeat + lengthBeats);
+    const energy = Math.min(Math.max(Number(sec.energy ?? 1.0), 0.35), 1.3);
+
+    if (endBeat > maxEndBeat && endBeat <= MAX_BEATS) {
+      maxEndBeat = Math.ceil(endBeat);
+    }
+
+    const secTracks = Array.isArray(sec.tracks) ? sec.tracks : [];
+    for (const tr of secTracks) {
+      upsertTrackEvents(tr, startBeat, energy);
+    }
+
+    normalizedSections.push({
+      name: String(sec.name || `Section ${sIdx + 1}`).trim(),
+      startBeat,
+      endBeat,
+      energy,
+    });
+    cursorBeat = endBeat;
+  }
+
+  // Sort notes chronologically per track
+  const tracks = Array.from(trackMap.values()).map((tr) => ({
+    ...tr,
+    notes: tr.notes.sort((a, b) => a.beat - b.beat),
+  }));
+
+  // 3. Hybrid Web Audio transitions (risers, sub_drops, reverse_cymbals, crash_impacts)
+  const rawTransitions = Array.isArray(args.transitions) ? args.transitions : [];
+  const transitions = rawTransitions
+    .filter((t) => t && VALID_TRANSITION_TYPES.has(String(t.type || '').trim()))
+    .map((t) => {
+      const beat = Math.min(MAX_BEATS, Math.max(0, Number(t.beat) || 0));
+      const durationBeats = Math.min(Math.max(Number(t.durationBeats) || 4, 0.5), 24);
+      const intensity = Math.min(Math.max(Number(t.intensity ?? 0.75), 0.15), 1.0);
+      return {
+        type: String(t.type).trim(),
+        beat,
+        durationBeats,
+        intensity,
+      };
+    });
 
   const totalDuration = Math.max(maxEndBeat * beatSec, 2.0);
 
   return {
     ok: true,
     isRealOrchestra: true,
-    songName: args.songName || 'Orchestral Score',
+    songName: args.songName || args.name || 'Orchestral Score',
     bpm,
     key: args.key || 'D Minor',
     reverb,
     totalBeats: maxEndBeat,
     totalDuration,
+    sections: normalizedSections,
+    transitions,
     tracks,
   };
 }

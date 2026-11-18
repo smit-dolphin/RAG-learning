@@ -8,10 +8,10 @@ function buildAgentSystemInstruction({ isScoped, strictDocs, mode, subMode }) {
   if (mode === 'sfx') {
     const acousticEmphasis =
       subMode === 'orchestra'
-        ? 'ACTIVE TAB: REAL SAMPLED ORCHESTRA MODE (`smplr` SoundFonts) — Prioritize `compose_real_music_score` with real sampled GM instruments (`SplendidGrandPiano`, `cello`, `violin`, `viola`, `string_ensemble_1`, `tremolo_strings`, `pizzicato_strings`, `orchestral_harp`, `church_organ`, `harpsichord`, `choir_aahs`, `flute`, `oboe`, `french_horn`, `trumpet`, `acoustic_guitar_nylon`, `electric_piano_1`, `acoustic_bass`, `marimba`, `timpani`, `TR-808`). Express beats (`beat`), sustained `durationBeats`, MIDI `velocity` (20-127), stereo `pan`, and rich musical polyphony.'
+        ? 'ACTIVE TAB: REAL SAMPLED ORCHESTRA MODE (`smplr` SoundFonts + Hybrid Transitions) — Prioritize `compose_real_music_score` using `sections` (e.g. Intro, Verse/Development, Build-Up, The Drop/Climax, Bridge, Outro up to 320 beats / 2-3 minutes!) AND `transitions` (`riser`, `reverse_cymbal`, `sub_drop`, `crash_impact`). Vary instruments, octave register, harmony, and `energy` across sections (do NOT repeat the same 4 bars endlessly). Use `repeatCount` + `patternBeats` only on steady ostinato/drum backing while writing distinct lead melodies in each section.'
         : subMode === 'acoustic'
-        ? 'ACTIVE TAB: ACOUSTIC STUDIO MODE — Prioritize `compose_acoustic_music` with realistic physical-modeling instruments (`piano`, `guitar`, `strings`, `flute`, `brass`, `epiano`, `harp`, `acoustic_kick`, `acoustic_snare`, `acoustic_hihat`), polyphonic chords (`"Am"`, `"Fmaj7"`, `"C4+E4+G4"`), stereo panning, and concert hall reverb.'
-        : 'Choose `compose_real_music_score` when the user wants full studio/orchestral sampled instruments (`smplr`), `compose_acoustic_music` for physical-modeling DSP instruments, `compose_bgm_loop` for chiptune/retro/synthwave BGM, and `synthesize_layered_sfx` / `synthesize_math_sfx` / `blend_sfx_presets` for sound effects.';
+          ? 'ACTIVE TAB: ACOUSTIC STUDIO MODE — Prioritize `compose_acoustic_music` with realistic physical-modeling instruments (`piano`, `guitar`, `strings`, `flute`, `brass`, `epiano`, `harp`, `acoustic_kick`, `acoustic_snare`, `acoustic_hihat`), polyphonic chords (`"Am"`, `"Fmaj7"`, `"C4+E4+G4"`), stereo panning, and concert hall reverb.'
+          : 'Choose `compose_real_music_score` when the user wants full studio/orchestral sampled instruments (`smplr`), `compose_acoustic_music` for physical-modeling DSP instruments, `compose_bgm_loop` for chiptune/retro/synthwave BGM, and `synthesize_layered_sfx` / `synthesize_math_sfx` / `blend_sfx_presets` for sound effects.';
 
     return [
       'You are VectorMind SFX, BGM & Real Orchestra Audio Architect, an expert procedural sound designer, orchestral/chiptune composer, and studio arranger.',
@@ -96,10 +96,10 @@ function mergeSources(existing, incoming) {
 function buildSfxPlanningInstruction(subMode) {
   const modeHint =
     subMode === 'orchestra'
-      ? 'USER IS IN REAL SAMPLED ORCHESTRA MODE: Design a rich multi-instrument studio score for `compose_real_music_score` using sampled instruments (`SplendidGrandPiano`, `cello`, `violin`, `orchestral_harp`, `church_organ`, `harpsichord`, `choir_aahs`, `flute`, `french_horn`, `timpani`, etc.) with exact `beat`, `durationBeats`, and `velocity` phrasing.'
+      ? 'USER IS IN REAL SAMPLED ORCHESTRA MODE: Plan a multi-section evolving arrangement (`sections`: Intro -> Development -> Build-Up -> Drop/Climax -> Bridge/Outro, up to 192-256 beats for ~2-minute full themes) plus hybrid `transitions` (`riser`, `reverse_cymbal`, `sub_drop`, `crash_impact`) for `compose_real_music_score`.'
       : subMode === 'acoustic'
-      ? 'USER IS IN ACOUSTIC STUDIO MODE: Design for realistic physical-modeling instruments (`compose_acoustic_music`: piano, guitar, harp, strings, flute, brass, acoustic drums) with chord progression, stereo panning, and hall reverb.'
-      : 'Choose `compose_real_music_score` (sampled GM studio/orchestral scores), `compose_acoustic_music` (physical-modeling DSP music), `compose_bgm_loop` (chiptune/synth BGM loops), `synthesize_layered_sfx` (multi-part SFX), `blend_sfx_presets`, or `synthesize_math_sfx` (single SFX).';
+        ? 'USER IS IN ACOUSTIC STUDIO MODE: Design for realistic physical-modeling instruments (`compose_acoustic_music`: piano, guitar, harp, strings, flute, brass, acoustic drums) with chord progression, stereo panning, and hall reverb.'
+        : 'Choose `compose_real_music_score` (sampled GM studio/orchestral scores), `compose_acoustic_music` (physical-modeling DSP music), `compose_bgm_loop` (chiptune/synth BGM loops), `synthesize_layered_sfx` (multi-part SFX), `blend_sfx_presets`, or `synthesize_math_sfx` (single SFX).';
 
   return [
     'You are the Acoustic & Musical Planning engine for VectorMind SFX, BGM & Acoustic Studio.',
@@ -259,12 +259,12 @@ async function runAgentChat({
     const activeTools =
       mode === 'sfx'
         ? ragToolDeclarations.filter(
-            (t) =>
-              t.name.includes('sfx') ||
-              t.name.includes('bgm') ||
-              t.name.includes('acoustic') ||
-              t.name.includes('real_music')
-          )
+          (t) =>
+            t.name.includes('sfx') ||
+            t.name.includes('bgm') ||
+            t.name.includes('acoustic') ||
+            t.name.includes('real_music')
+        )
         : ragToolDeclarations;
 
     const config = {

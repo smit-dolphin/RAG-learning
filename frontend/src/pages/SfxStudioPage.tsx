@@ -245,9 +245,9 @@ const INITIAL_BGM_CHANNELS: BgmChannel[] = [
 ];
 
 const PROMPT_CHIPS = [
-  'Compose a melancholic Hollow Knight piano, solo cello & choir theme',
-  'Compose a moonlit piano & bowed strings ballad in A Minor',
-  'Create a dramatic church organ & string ensemble cathedral boss theme',
+  'Compose a full 2-minute Hollow Knight theme with piano intro, riser build-up, and choir/organ drop',
+  'Compose a melancholic Hollow Knight piano, solo cello & harp ballad in D Minor',
+  'Create a 2-minute heroic orchestral battle BGM with French horn fanfare, timpani build, and sub-drop',
   'Compose a 142 BPM cyberpunk boss battle BGM loop',
   'Synthesize a 3-layer legendary treasure chest fanfare',
 ];
@@ -646,6 +646,8 @@ export default function SfxStudioPage() {
                   reverb: Number(raw.reverb ?? 0.45),
                   totalBeats,
                   totalDuration: Number(raw.totalDuration || totalBeats * beatSec),
+                  sections: Array.isArray(raw.sections) ? raw.sections : [],
+                  transitions: Array.isArray(raw.transitions) ? raw.transitions : [],
                   tracks,
                 };
               }
@@ -1053,18 +1055,51 @@ export default function SfxStudioPage() {
       const totalBeats = Math.max(orchestraScore.totalBeats || 16, 8);
       const colors = ['#06b6d4', '#a855f7', '#10b981', '#f59e0b', '#ec4899'];
       const trackCount = Math.max(orchestraScore.tracks.length, 1);
-      const rowH = (height - 16) / trackCount;
+      const hasSections = Array.isArray(orchestraScore.sections) && orchestraScore.sections.length > 0;
+      const topOffset = hasSections ? 18 : 8;
+      const rowH = (height - topOffset - 6) / trackCount;
+
+      if (hasSections && orchestraScore.sections) {
+        orchestraScore.sections.forEach((sec, sIdx) => {
+          const sx = (sec.startBeat / totalBeats) * width;
+          const sw = Math.max(((sec.endBeat - sec.startBeat) / totalBeats) * width, 8);
+          ctx.fillStyle = sIdx % 2 === 0 ? 'rgba(6, 182, 212, 0.08)' : 'rgba(168, 85, 247, 0.08)';
+          ctx.fillRect(sx, 0, sw, height);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+          ctx.beginPath();
+          ctx.moveTo(sx, 0);
+          ctx.lineTo(sx, height);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+          ctx.font = '10px monospace';
+          ctx.fillText(sec.name.slice(0, 18), sx + 4, 12, Math.max(sw - 6, 16));
+        });
+      }
 
       orchestraScore.tracks.forEach((tr, rIdx) => {
         if (tr.muted) return;
         ctx.fillStyle = colors[rIdx % colors.length];
         tr.notes.forEach((ev) => {
           const x = (ev.beat / totalBeats) * width;
-          const w = Math.max((ev.durationBeats / totalBeats) * width - 2, 4);
+          const w = Math.max((ev.durationBeats / totalBeats) * width - 1, 3);
           ctx.globalAlpha = Math.max(0.35, Math.min(0.95, (ev.velocity || 85) / 115));
-          ctx.fillRect(x + 1, 8 + rIdx * rowH + 3, w, Math.max(rowH - 6, 5));
+          ctx.fillRect(x + 1, topOffset + rIdx * rowH + 2, w, Math.max(rowH - 4, 4));
         });
       });
+
+      if (Array.isArray(orchestraScore.transitions)) {
+        ctx.globalAlpha = 0.9;
+        orchestraScore.transitions.forEach((tr) => {
+          const tx = (tr.beat / totalBeats) * width;
+          ctx.strokeStyle = tr.type === 'sub_drop' || tr.type === 'crash_impact' ? '#f59e0b' : '#22d3ee';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(tx, topOffset);
+          ctx.lineTo(tx, height);
+          ctx.stroke();
+        });
+      }
 
       const totalDur = computeEffectiveScoreDuration(orchestraScore);
       if (orchestraStatus === 'playing' && totalDur > 0) {
@@ -1306,6 +1341,8 @@ export default function SfxStudioPage() {
                 reverb: Number(data.result.reverb ?? 0.45),
                 totalBeats: Number(data.result.totalBeats || 16),
                 totalDuration: Number(data.result.totalDuration || 12),
+                sections: Array.isArray(data.result.sections) ? data.result.sections : [],
+                transitions: Array.isArray(data.result.transitions) ? data.result.transitions : [],
                 tracks: Array.isArray(data.result.tracks) ? data.result.tracks : [],
               };
 
@@ -1669,8 +1706,25 @@ export default function SfxStudioPage() {
                       {msg.isRealOrchestra && msg.orchestraScore && msg.orchestraScore.tracks.length > 0 && (
                         <div className="sfx-inline-layers-breakdown">
                           <span className="sfx-breakdown-title">
-                            Real SoundFont Orchestra ({msg.orchestraScore.totalBeats} Beats):
+                            Real SoundFont Orchestra ({msg.orchestraScore.totalBeats} Beats •{' '}
+                            {computeEffectiveScoreDuration(msg.orchestraScore).toFixed(0)}s
+                            {msg.orchestraScore.sections && msg.orchestraScore.sections.length > 0
+                              ? ` • ${msg.orchestraScore.sections.length} Sections`
+                              : ''}
+                            {msg.orchestraScore.transitions && msg.orchestraScore.transitions.length > 0
+                              ? ` • ${msg.orchestraScore.transitions.length} Drops/Risers`
+                              : ''}
+                            ):
                           </span>
+                          {msg.orchestraScore.sections && msg.orchestraScore.sections.length > 0 && (
+                            <div className="sfx-sections-pill-row">
+                              {msg.orchestraScore.sections.map((sec, sIdx) => (
+                                <span key={`${sec.name}-${sIdx}`} className="sfx-section-badge">
+                                  {sec.name} ({sec.startBeat}-{sec.endBeat}b)
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {msg.orchestraScore.tracks.map((tr, tIdx) => (
                             <div key={tr.id || tIdx} className="sfx-inline-layer-row">
                               <div className="sfx-inline-layer-info">
@@ -2215,6 +2269,21 @@ export default function SfxStudioPage() {
               </div>
             </div>
 
+            {orchestraScore.sections && orchestraScore.sections.length > 0 && (
+              <div className="sfx-sections-pill-row" style={{ marginBottom: 4 }}>
+                {orchestraScore.sections.map((sec, sIdx) => (
+                  <span key={`${sec.name}-${sIdx}`} className="sfx-section-badge">
+                    {sec.name} (b{sec.startBeat}–{sec.endBeat})
+                  </span>
+                ))}
+                {orchestraScore.transitions && orchestraScore.transitions.length > 0 && (
+                  <span className="sfx-section-badge transition">
+                    ⚡ {orchestraScore.transitions.length} Risers/Drops
+                  </span>
+                )}
+              </div>
+            )}
+
             {orchestraScore.tracks.map((tr) => {
               const notePreview = tr.notes
                 .slice(0, 10)
@@ -2388,8 +2457,8 @@ export default function SfxStudioPage() {
                   <input
                     type="range"
                     min="8"
-                    max="64"
-                    step="4"
+                    max="320"
+                    step="8"
                     value={orchestraScore.totalBeats || 16}
                     onChange={(e) =>
                       setOrchestraScore((prev) => ({
@@ -2907,40 +2976,40 @@ export default function SfxStudioPage() {
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1 }}>
             {presetTab === 'orchestra'
               ? orchestraPresets.map((op, idx) => (
+                <button
+                  key={op.id || `${op.songName}-${idx}`}
+                  type="button"
+                  className="sfx-preset-pill"
+                  onClick={() => loadOrchestraPreset(op)}
+                  title={op.description || `${op.bpm} BPM • ${op.key} • ${op.tracks.map((t) => t.instrument).join(', ')}`}
+                >
+                  🎼 {op.songName || op.name}
+                </button>
+              ))
+              : presetTab === 'acoustic'
+                ? acousticPresets.map((ap) => (
                   <button
-                    key={op.id || `${op.songName}-${idx}`}
+                    key={ap.id}
                     type="button"
                     className="sfx-preset-pill"
-                    onClick={() => loadOrchestraPreset(op)}
-                    title={op.description || `${op.bpm} BPM • ${op.key} • ${op.tracks.map((t) => t.instrument).join(', ')}`}
+                    onClick={() => loadAcousticPreset(ap)}
+                    title={ap.description}
                   >
-                    🎼 {op.songName || op.name}
+                    🎻 {ap.name}
                   </button>
                 ))
-                : presetTab === 'acoustic'
-                  ? acousticPresets.map((ap) => (
-                    <button
-                      key={ap.id}
-                      type="button"
-                      className="sfx-preset-pill"
-                      onClick={() => loadAcousticPreset(ap)}
-                      title={ap.description}
-                    >
-                      🎻 {ap.name}
-                    </button>
-                  ))
                 : presetTab === 'bgm'
                   ? bgmPresets.map((bp) => (
-                      <button
-                        key={bp.id}
-                        type="button"
-                        className="sfx-preset-pill"
-                        onClick={() => loadBgmPreset(bp)}
-                        title={bp.description}
-                      >
-                        🎵 {bp.name}
-                      </button>
-                    ))
+                    <button
+                      key={bp.id}
+                      type="button"
+                      className="sfx-preset-pill"
+                      onClick={() => loadBgmPreset(bp)}
+                      title={bp.description}
+                    >
+                      🎵 {bp.name}
+                    </button>
+                  ))
                   : presetTab === 'layered'
                     ? layeredPresets.map((lp) => (
                       <button

@@ -28,6 +28,22 @@ export interface OrchestraTrack {
   notes: OrchestraNoteEvent[];
 }
 
+export interface OrchestraSection {
+  name: string;
+  startBeat: number;
+  endBeat: number;
+  energy?: number;
+}
+
+export type OrchestraTransitionType = 'riser' | 'reverse_cymbal' | 'sub_drop' | 'crash_impact';
+
+export interface OrchestraTransition {
+  type: OrchestraTransitionType;
+  beat: number;
+  durationBeats: number;
+  intensity?: number;
+}
+
 export interface OrchestraScore {
   ok?: boolean;
   isRealOrchestra?: boolean;
@@ -40,6 +56,8 @@ export interface OrchestraScore {
   reverb: number;
   totalBeats: number;
   totalDuration: number;
+  sections?: OrchestraSection[];
+  transitions?: OrchestraTransition[];
   tracks: OrchestraTrack[];
 }
 
@@ -167,6 +185,196 @@ function instantiateInstrument(
     pan,
     notesToLoad: uniqueNotes.length > 0 ? { notes: uniqueNotes, fallback: 'nearest' } : undefined,
   });
+}
+
+function createDeterministicNoiseBuffer(
+  ctx: BaseAudioContext,
+  durationSec: number
+): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const frameCount = Math.max(1, Math.floor(sampleRate * durationSec));
+  const buffer = ctx.createBuffer(2, frameCount, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const channelData = buffer.getChannelData(ch);
+    let seed = ch === 0 ? 0x13579bdf : 0x2468ace0;
+    for (let i = 0; i < frameCount; i++) {
+      // Deterministic LCG white noise for identical live + offline render
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      channelData[i] = (seed / 0xffffffff) * 2 - 1;
+    }
+  }
+  return buffer;
+}
+
+/**
+ * Schedule hybrid Web Audio sweeps and cinematic impacts synchronized on the same
+ * AudioContext / OfflineAudioContext clock as `smplr`.
+ */
+function scheduleHybridTransition(
+  ctx: BaseAudioContext,
+  destination: AudioNode,
+  tr: OrchestraTransition,
+  beatSec: number,
+  startOffsetSec: number
+): Array<() => void> {
+  const stopFns: Array<() => void> = [];
+  const startTime = Math.max(ctx.currentTime, startOffsetSec + (Number(tr.beat) || 0) * beatSec);
+  const dur = Math.max(0.25, (Number(tr.durationBeats) || 2) * beatSec);
+  const endTime = startTime + dur;
+  const intensity = Math.min(1.0, Math.max(0.15, Number(tr.intensity ?? 0.75)));
+
+  if (tr.type === 'riser') {
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = createDeterministicNoiseBuffer(ctx, dur + 0.1);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.setValueAtTime(3.2, startTime);
+    bp.frequency.setValueAtTime(220, startTime);
+    bp.frequency.exponentialRampToValueAtTime(5200, endTime);
+
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.001, startTime);
+    nGain.gain.exponentialRampToValueAtTime(0.26 * intensity, Math.max(startTime + 0.05, endTime - 0.04));
+    nGain.gain.linearRampToValueAtTime(0.0001, endTime);
+
+    noiseSrc.connect(bp);
+    bp.connect(nGain);
+    nGain.connect(destination);
+    noiseSrc.start(startTime);
+    noiseSrc.stop(endTime + 0.05);
+    stopFns.push(() => {
+      try {
+        noiseSrc.stop();
+        noiseSrc.disconnect();
+      } catch {
+        // Ignore
+      }
+    });
+
+    const synthOsc = ctx.createOscillator();
+    synthOsc.type = 'sawtooth';
+    synthOsc.frequency.setValueAtTime(73.42, startTime);
+    synthOsc.frequency.exponentialRampToValueAtTime(293.66, endTime);
+    const lpf = ctx.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.setValueAtTime(350, startTime);
+    lpf.frequency.exponentialRampToValueAtTime(3600, endTime);
+
+    const oGain = ctx.createGain();
+    oGain.gain.setValueAtTime(0.001, startTime);
+    oGain.gain.exponentialRampToValueAtTime(0.16 * intensity, Math.max(startTime + 0.05, endTime - 0.03));
+    oGain.gain.linearRampToValueAtTime(0.0001, endTime);
+
+    synthOsc.connect(lpf);
+    lpf.connect(oGain);
+    oGain.connect(destination);
+    synthOsc.start(startTime);
+    synthOsc.stop(endTime + 0.05);
+    stopFns.push(() => {
+      try {
+        synthOsc.stop();
+        synthOsc.disconnect();
+      } catch {
+        // Ignore
+      }
+    });
+  } else if (tr.type === 'reverse_cymbal') {
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = createDeterministicNoiseBuffer(ctx, dur + 0.1);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(2400, startTime);
+    hp.frequency.exponentialRampToValueAtTime(5800, endTime);
+
+    const nGain = ctx.createGain();
+    nGain.gain.setValueAtTime(0.001, startTime);
+    nGain.gain.exponentialRampToValueAtTime(0.28 * intensity, Math.max(startTime + 0.05, endTime - 0.02));
+    nGain.gain.linearRampToValueAtTime(0.0001, endTime);
+
+    noiseSrc.connect(hp);
+    hp.connect(nGain);
+    nGain.connect(destination);
+    noiseSrc.start(startTime);
+    noiseSrc.stop(endTime + 0.05);
+    stopFns.push(() => {
+      try {
+        noiseSrc.stop();
+        noiseSrc.disconnect();
+      } catch {
+        // Ignore
+      }
+    });
+  } else if (tr.type === 'sub_drop') {
+    const subOsc = ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(115, startTime);
+    subOsc.frequency.exponentialRampToValueAtTime(32, Math.min(endTime, startTime + Math.max(0.6, dur * 0.85)));
+
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.001, startTime);
+    subGain.gain.linearRampToValueAtTime(0.45 * intensity, startTime + 0.025);
+    subGain.gain.exponentialRampToValueAtTime(0.0005, endTime);
+
+    subOsc.connect(subGain);
+    subGain.connect(destination);
+    subOsc.start(startTime);
+    subOsc.stop(endTime + 0.05);
+    stopFns.push(() => {
+      try {
+        subOsc.stop();
+        subOsc.disconnect();
+      } catch {
+        // Ignore
+      }
+    });
+  } else if (tr.type === 'crash_impact') {
+    const boomOsc = ctx.createOscillator();
+    boomOsc.type = 'triangle';
+    boomOsc.frequency.setValueAtTime(98, startTime);
+    boomOsc.frequency.exponentialRampToValueAtTime(36, startTime + Math.min(dur, 1.4));
+    const boomGain = ctx.createGain();
+    boomGain.gain.setValueAtTime(0.32 * intensity, startTime);
+    boomGain.gain.exponentialRampToValueAtTime(0.0005, startTime + Math.min(dur, 1.8));
+    boomOsc.connect(boomGain);
+    boomGain.connect(destination);
+    boomOsc.start(startTime);
+    boomOsc.stop(startTime + Math.min(dur, 1.9));
+
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = createDeterministicNoiseBuffer(ctx, dur + 0.1);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(3000, startTime);
+    const cGain = ctx.createGain();
+    cGain.gain.setValueAtTime(0.24 * intensity, startTime);
+    cGain.gain.exponentialRampToValueAtTime(0.0004, endTime);
+    noiseSrc.connect(hp);
+    hp.connect(cGain);
+    cGain.connect(destination);
+    noiseSrc.start(startTime);
+    noiseSrc.stop(endTime + 0.05);
+
+    stopFns.push(
+      () => {
+        try {
+          boomOsc.stop();
+          boomOsc.disconnect();
+        } catch {
+          // Ignore
+        }
+      },
+      () => {
+        try {
+          noiseSrc.stop();
+          noiseSrc.disconnect();
+        } catch {
+          // Ignore
+        }
+      }
+    );
+  }
+
+  return stopFns;
 }
 
 export function computeEffectiveScoreDuration(score: OrchestraScore): number {
@@ -347,6 +555,13 @@ export class OrchestraPlayerController {
         }
       }
 
+      if (Array.isArray(score.transitions) && this.ctx && this.masterGain) {
+        for (const tr of score.transitions) {
+          const fns = scheduleHybridTransition(this.ctx, this.masterGain, tr, beatSec, passOffset);
+          this.stopFns.push(...fns);
+        }
+      }
+
       const startAudioTime = passOffset;
       const tickProgress = () => {
         if (sessionId !== this.playSessionId || !this.ctx || !this.isPlaying) return;
@@ -392,7 +607,7 @@ export async function exportOrchestraWav(score: OrchestraScore): Promise<void> {
   const bpm = Math.min(Math.max(Number(score.bpm) || 90, 40), 220);
   const beatSec = 60 / bpm;
   const totalDuration = computeEffectiveScoreDuration(score);
-  const renderDuration = Math.min(120, totalDuration + 2.5);
+  const renderDuration = Math.min(260, totalDuration + 2.5);
 
   const rendered = await renderOffline(
     async (offlineCtx) => {
@@ -414,6 +629,12 @@ export async function exportOrchestraWav(score: OrchestraScore): Promise<void> {
             duration,
             velocity: Math.min(127, Math.max(15, Number(ev.velocity) || 84)),
           });
+        }
+      }
+
+      if (Array.isArray(score.transitions)) {
+        for (const tr of score.transitions) {
+          scheduleHybridTransition(offlineCtx, offlineCtx.destination, tr, beatSec, 0);
         }
       }
     },
