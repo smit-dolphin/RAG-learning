@@ -1,14 +1,19 @@
 import { create } from 'zustand';
 import {
+  deleteDocumentById,
+  fetchDocuments as fetchDocsApi,
   getBackendStatus,
-  ingestDocument,
   ingestFile,
-  sendChatMessage,
+  streamChatMessage,
 } from '../services/chatApi';
-import type { ChatMessage, IndexedDoc, IndexStatus } from '../types/chat';
-
-type Theme = 'dark' | 'light';
-type SidebarTab = 'ingest' | 'documents';
+import type {
+  ChatMessage,
+  ChatSession,
+  IndexedDoc,
+  IndexStatus,
+  ThemeId,
+  WorkspaceView,
+} from '../types/chat';
 
 interface IngestFeedback {
   type: 'success' | 'error';
@@ -16,68 +21,176 @@ interface IngestFeedback {
 }
 
 interface RagState {
-  theme: Theme;
+  theme: ThemeId;
   sidebarOpen: boolean;
-  sidebarTab: SidebarTab;
-  messages: ChatMessage[];
+  activeView: WorkspaceView;
+  selectedDocId: string | null;
+  sessions: ChatSession[];
+  activeSessionId: string;
   isSending: boolean;
   expandedSources: Record<string, boolean>;
   isIngesting: boolean;
+  deletingDocId: string | null;
   ingestFeedback: IngestFeedback | null;
   indexedDocs: IndexedDoc[];
-  searchQuery: string;
   indexStatus: IndexStatus | null;
 
-  toggleTheme: () => void;
+  setTheme: (theme: ThemeId) => void;
   setSidebarOpen: (open: boolean) => void;
-  setSidebarTab: (tab: SidebarTab) => void;
-  setSearchQuery: (query: string) => void;
+  setActiveView: (view: WorkspaceView, docId?: string | null) => void;
+  createNewChat: () => void;
+  selectSession: (id: string) => void;
+  togglePinSession: (id: string) => void;
+  deleteSession: (id: string) => void;
   clearMessages: () => void;
   clearIngestFeedback: () => void;
   toggleSourceExpansion: (msgId: string) => void;
   fetchStatus: () => Promise<void>;
+  fetchDocs: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
-  ingestTextDoc: (title: string, content: string) => Promise<boolean>;
+  stopStreaming: () => void;
   ingestFileDoc: (file: File, title?: string) => Promise<boolean>;
+  deleteDoc: (id: string) => Promise<boolean>;
 }
+
+const SESSIONS_STORAGE_KEY = 'rag_agent_sessions';
+let activeStreamController: AbortController | null = null;
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function getInitialTheme(): Theme {
-  const saved = localStorage.getItem('rag_agent_theme');
-  if (saved === 'dark' || saved === 'light') return saved;
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches
-    ? 'light'
-    : 'dark';
+function createEmptySession(): ChatSession {
+  return {
+    id: crypto.randomUUID(),
+    title: 'New Chat',
+    messages: [],
+    updatedAt: formatTime(new Date()),
+  };
 }
+
+function loadInitialSessions(): {
+  sessions: ChatSession[];
+  activeSessionId: string;
+} {
+  try {
+    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ChatSession[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return { sessions: parsed, activeSessionId: parsed[0].id };
+      }
+    }
+  } catch {
+    // ignore parse error
+  }
+  const initial = createEmptySession();
+  return { sessions: [initial], activeSessionId: initial.id };
+}
+
+function persistSessions(sessions: ChatSession[]) {
+  try {
+    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // ignore quota error
+  }
+}
+
+function getInitialTheme(): ThemeId {
+  const saved = localStorage.getItem('rag_agent_theme');
+  if (saved) {
+    if (saved === 'dark') return 'dark-plus';
+    if (saved === 'light') return 'light-plus';
+    return saved as ThemeId;
+  }
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches
+    ? 'light-plus'
+    : 'dark-plus';
+}
+
+function summarizeTitle(text: string): string {
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  return cleaned.length > 32 ? `${cleaned.slice(0, 32)}...` : cleaned;
+}
+
+const initialSessionState = loadInitialSessions();
 
 export const useRagStore = create<RagState>((set, get) => ({
   theme: getInitialTheme(),
   sidebarOpen: true,
-  sidebarTab: 'ingest',
-  messages: [],
+  activeView: 'chat',
+  selectedDocId: null,
+  sessions: initialSessionState.sessions,
+  activeSessionId: initialSessionState.activeSessionId,
   isSending: false,
   expandedSources: {},
   isIngesting: false,
+  deletingDocId: null,
   ingestFeedback: null,
   indexedDocs: [],
-  searchQuery: '',
   indexStatus: null,
 
-  toggleTheme: () =>
-    set((state) => {
-      const next = state.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('rag_agent_theme', next);
-      return { theme: next };
-    }),
+  setTheme: (theme: ThemeId) => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('rag_agent_theme', theme);
+    set({ theme });
+  },
 
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  setSidebarTab: (tab) => set({ sidebarTab: tab }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  clearMessages: () => set({ messages: [], expandedSources: {} }),
+
+  setActiveView: (view, docId = null) =>
+    set({ activeView: view, selectedDocId: docId }),
+
+  createNewChat: () => {
+    const { sessions, activeSessionId } = get();
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (active && active.messages.length === 0) {
+      set({ activeView: 'chat' });
+      return;
+    }
+    const fresh = createEmptySession();
+    const next = [fresh, ...sessions];
+    persistSessions(next);
+    set({ sessions: next, activeSessionId: fresh.id, activeView: 'chat' });
+  },
+
+  selectSession: (id) => set({ activeSessionId: id, activeView: 'chat' }),
+
+  togglePinSession: (id) => {
+    const { sessions } = get();
+    const updated = sessions.map((s) =>
+      s.id === id ? { ...s, pinned: !s.pinned } : s
+    );
+    persistSessions(updated);
+    set({ sessions: updated });
+  },
+
+  deleteSession: (id) => {
+    const { sessions, activeSessionId } = get();
+    const remaining = sessions.filter((s) => s.id !== id);
+    if (remaining.length === 0) {
+      const fresh = createEmptySession();
+      persistSessions([fresh]);
+      set({ sessions: [fresh], activeSessionId: fresh.id });
+      return;
+    }
+    const nextActive =
+      activeSessionId === id ? remaining[0].id : activeSessionId;
+    persistSessions(remaining);
+    set({ sessions: remaining, activeSessionId: nextActive });
+  },
+
+  clearMessages: () => {
+    const { sessions, activeSessionId } = get();
+    const next = sessions.map((s) =>
+      s.id === activeSessionId
+        ? { ...s, title: 'New Chat', messages: [], updatedAt: formatTime(new Date()) }
+        : s
+    );
+    persistSessions(next);
+    set({ sessions: next, expandedSources: {} });
+  },
+
   clearIngestFeedback: () => set({ ingestFeedback: null }),
 
   toggleSourceExpansion: (msgId) =>
@@ -97,100 +210,117 @@ export const useRagStore = create<RagState>((set, get) => ({
     }
   },
 
+  fetchDocs: async () => {
+    try {
+      const indexedDocs = await fetchDocsApi();
+      set({ indexedDocs });
+    } catch {
+      // keep current state
+    }
+  },
+
+  stopStreaming: () => {
+    if (activeStreamController) {
+      activeStreamController.abort();
+      activeStreamController = null;
+    }
+  },
+
   sendMessage: async (text) => {
     const trimmed = text.trim();
     if (!trimmed || get().isSending) return;
 
+    const targetSessionId = get().activeSessionId;
+    const now = formatTime(new Date());
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: trimmed,
-      timestamp: formatTime(new Date()),
+      timestamp: now,
+    };
+    const aiMessageId = crypto.randomUUID();
+    const aiPlaceholder: ChatMessage = {
+      id: aiMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: now,
     };
 
-    set((state) => ({
-      messages: [...state.messages, userMessage],
-      isSending: true,
-    }));
+    const withUserAndPlaceholder = get().sessions.map((s) => {
+      if (s.id !== targetSessionId) return s;
+      const isFirst = s.messages.length === 0;
+      return {
+        ...s,
+        title: isFirst ? summarizeTitle(trimmed) : s.title,
+        messages: [...s.messages, userMessage, aiPlaceholder],
+        updatedAt: now,
+      };
+    });
+
+    persistSessions(withUserAndPlaceholder);
+    const controller = new AbortController();
+    activeStreamController = controller;
+    set({ sessions: withUserAndPlaceholder, isSending: true });
+
+    const updateAiMessage = (updater: (msg: ChatMessage) => ChatMessage) => {
+      set((state) => ({
+        sessions: state.sessions.map((s) =>
+          s.id === targetSessionId
+            ? {
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === aiMessageId ? updater(m) : m
+                ),
+                updatedAt: formatTime(new Date()),
+              }
+            : s
+        ),
+      }));
+    };
 
     try {
-      const { reply, sources } = await sendChatMessage(trimmed);
-      const aiMessageId = crypto.randomUUID();
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: aiMessageId,
-            role: 'assistant',
-            content: reply,
-            sources,
-            timestamp: formatTime(new Date()),
+      await streamChatMessage(
+        trimmed,
+        {
+          onSources: (sources) => {
+            updateAiMessage((m) => ({ ...m, sources }));
+            if (sources.length > 0) {
+              set((state) => ({
+                expandedSources: { ...state.expandedSources, [aiMessageId]: true },
+              }));
+            }
           },
-        ],
-        expandedSources:
-          sources && sources.length > 0
-            ? { ...state.expandedSources, [aiMessageId]: true }
-            : state.expandedSources,
-      }));
+          onDelta: (delta) => {
+            updateAiMessage((m) => ({
+              ...m,
+              content: m.content + delta,
+            }));
+          },
+        },
+        { signal: controller.signal }
+      );
     } catch (err) {
-      const errorText =
-        err instanceof Error ? err.message : 'Failed to reach the backend.';
-      set((state) => ({
-        messages: [
-          ...state.messages,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: `Backend Error: ${errorText}`,
-            timestamp: formatTime(new Date()),
-            isError: true,
-          },
-        ],
-      }));
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        updateAiMessage((m) =>
+          m.content
+            ? m
+            : { ...m, content: 'Generation stopped.' }
+        );
+      } else {
+        const errorText =
+          err instanceof Error ? err.message : 'Failed to reach the backend.';
+        updateAiMessage((m) => ({
+          ...m,
+          content: m.content
+            ? `${m.content}\n\nBackend Error: ${errorText}`
+            : `Backend Error: ${errorText}`,
+          isError: true,
+        }));
+      }
     } finally {
+      activeStreamController = null;
+      persistSessions(get().sessions);
       set({ isSending: false });
-    }
-  },
-
-  ingestTextDoc: async (title, content) => {
-    const trimmed = content.trim();
-    if (!trimmed || get().isIngesting) return false;
-
-    const docTitle =
-      title.trim() || `Knowledge Unit #${get().indexedDocs.length + 1}`;
-    const id = `doc-${Date.now()}`;
-
-    set({ isIngesting: true, ingestFeedback: null });
-
-    try {
-      const res = await ingestDocument(id, trimmed, docTitle);
-      set((state) => ({
-        indexedDocs: [
-          {
-            id,
-            title: docTitle,
-            indexedAt: formatTime(new Date()),
-            chunksCount: res.chunksCount,
-          },
-          ...state.indexedDocs,
-        ],
-        ingestFeedback: {
-          type: 'success',
-          text: `Indexed "${docTitle}" (${res.chunksCount ?? 1} chunk${res.chunksCount === 1 ? '' : 's'}) into Pinecone.`,
-        },
-      }));
-      void get().fetchStatus();
-      return true;
-    } catch (err) {
-      set({
-        ingestFeedback: {
-          type: 'error',
-          text: err instanceof Error ? err.message : 'Ingestion failed.',
-        },
-      });
-      return false;
-    } finally {
-      set({ isIngesting: false });
     }
   },
 
@@ -214,9 +344,10 @@ export const useRagStore = create<RagState>((set, get) => ({
         ],
         ingestFeedback: {
           type: 'success',
-          text: `Uploaded "${docTitle}" (${res.chunksCount ?? 1} chunk${res.chunksCount === 1 ? '' : 's'}) into Pinecone.`,
+          text: `Indexed "${docTitle}" (${res.chunksCount ?? 1} chunk${res.chunksCount === 1 ? '' : 's'}).`,
         },
       }));
+      void get().fetchDocs();
       void get().fetchStatus();
       return true;
     } catch (err) {
@@ -229,6 +360,40 @@ export const useRagStore = create<RagState>((set, get) => ({
       return false;
     } finally {
       set({ isIngesting: false });
+    }
+  },
+
+  deleteDoc: async (id) => {
+    if (get().deletingDocId) return false;
+
+    set({ deletingDocId: id, ingestFeedback: null });
+    try {
+      const res = await deleteDocumentById(id);
+      set((state) => ({
+        indexedDocs: state.indexedDocs.filter((d) => d.id !== id),
+        selectedDocId: state.selectedDocId === id ? null : state.selectedDocId,
+        activeView:
+          state.selectedDocId === id && state.activeView === 'document'
+            ? 'library'
+            : state.activeView,
+        ingestFeedback: {
+          type: 'success',
+          text: `Deleted document (${res.deletedChunksCount} chunk${res.deletedChunksCount === 1 ? '' : 's'} removed).`,
+        },
+      }));
+      void get().fetchStatus();
+      return true;
+    } catch (err) {
+      set({
+        ingestFeedback: {
+          type: 'error',
+          text:
+            err instanceof Error ? err.message : 'Failed to delete document.',
+        },
+      });
+      return false;
+    } finally {
+      set({ deletingDocId: null });
     }
   },
 }));

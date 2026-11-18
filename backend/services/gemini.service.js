@@ -23,7 +23,15 @@ async function generateResponse(prompt) {
   return response.text;
 }
 
+async function generateResponseStream(prompt) {
+  return ai.models.generateContentStream({
+    model: GEMINI_CHAT_MODEL,
+    contents: prompt,
+  });
+}
+
 module.exports = {
   generateEmbedding,
   generateResponse,
+  generateResponseStream,
 };

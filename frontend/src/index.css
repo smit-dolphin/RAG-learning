@@ -1,29 +1,31 @@
+/* ==========================================================================
+   Base Theme Variables (Default: VS Code Dark+)
+   ========================================================================== */
 :root {
-  /* Dark Theme Tokens (Default) */
-  --bg-canvas: #09090b;
-  --bg-surface: #111114;
-  --bg-surface-elevated: #18181c;
-  --bg-surface-active: #222228;
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
-  --border-focus: #3b82f6;
+  --bg-canvas: #1e1e1e;
+  --bg-surface: #252526;
+  --bg-surface-elevated: #2d2d2d;
+  --bg-surface-active: #37373d;
+  --border-subtle: #333333;
+  --border-hover: #474747;
+  --border-focus: #007acc;
 
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-primary: #cccccc;
+  --text-secondary: #9d9d9d;
+  --text-muted: #6e6e6e;
 
-  --accent-primary: #2563eb;
-  --accent-hover: #1d4ed8;
+  --accent-primary: #007acc;
+  --accent-hover: #0062a3;
   --accent-foreground: #ffffff;
-  --accent-subtle: rgba(37, 99, 235, 0.12);
-  --accent-border: rgba(37, 99, 235, 0.3);
+  --accent-subtle: rgba(0, 122, 204, 0.15);
+  --accent-border: rgba(0, 122, 204, 0.35);
 
-  --status-success: #10b981;
-  --status-success-bg: rgba(16, 185, 129, 0.1);
-  --status-success-border: rgba(16, 185, 129, 0.25);
-  --status-error: #ef4444;
-  --status-error-bg: rgba(239, 68, 68, 0.1);
-  --status-error-border: rgba(239, 68, 68, 0.25);
+  --status-success: #89d185;
+  --status-success-bg: rgba(137, 209, 133, 0.12);
+  --status-success-border: rgba(137, 209, 133, 0.3);
+  --status-error: #f48771;
+  --status-error-bg: rgba(244, 135, 113, 0.12);
+  --status-error-border: rgba(244, 135, 113, 0.3);
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
@@ -34,38 +36,455 @@
   --radius-lg: 14px;
 
   --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
-  --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-dropdown: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
-[data-theme='light'] {
-  --bg-canvas: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-surface-elevated: #f1f5f9;
-  --bg-surface-active: #e2e8f0;
-  --border-subtle: #e2e8f0;
-  --border-hover: #cbd5e1;
-  --border-focus: #2563eb;
+/* ==========================================================================
+   VS Code Dark Themes
+   ========================================================================== */
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+/* 1. VS Code Dark+ */
+[data-theme='dark-plus'] {
+  --bg-canvas: #1e1e1e;
+  --bg-surface: #252526;
+  --bg-surface-elevated: #2d2d2d;
+  --bg-surface-active: #37373d;
+  --border-subtle: #333333;
+  --border-hover: #474747;
+  --border-focus: #007acc;
+  --text-primary: #cccccc;
+  --text-secondary: #9d9d9d;
+  --text-muted: #6e6e6e;
+  --accent-primary: #007acc;
+  --accent-hover: #0062a3;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(0, 122, 204, 0.15);
+  --accent-border: rgba(0, 122, 204, 0.35);
+  --status-success: #89d185;
+  --status-success-bg: rgba(137, 209, 133, 0.12);
+  --status-success-border: rgba(137, 209, 133, 0.3);
+  --status-error: #f48771;
+  --status-error-bg: rgba(244, 135, 113, 0.12);
+  --status-error-border: rgba(244, 135, 113, 0.3);
+}
 
+/* 2. One Dark Pro */
+[data-theme='one-dark-pro'] {
+  --bg-canvas: #21252b;
+  --bg-surface: #282c34;
+  --bg-surface-elevated: #2f343f;
+  --bg-surface-active: #3a3f4b;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-focus: #61afef;
+  --text-primary: #abb2bf;
+  --text-secondary: #7f848e;
+  --text-muted: #5c6370;
+  --accent-primary: #61afef;
+  --accent-hover: #4fa5eb;
+  --accent-foreground: #21252b;
+  --accent-subtle: rgba(97, 175, 239, 0.14);
+  --accent-border: rgba(97, 175, 239, 0.32);
+  --status-success: #98c379;
+  --status-success-bg: rgba(152, 195, 121, 0.12);
+  --status-success-border: rgba(152, 195, 121, 0.3);
+  --status-error: #e06c75;
+  --status-error-bg: rgba(224, 108, 117, 0.12);
+  --status-error-border: rgba(224, 108, 117, 0.3);
+}
+
+/* 3. Dracula Official */
+[data-theme='dracula'] {
+  --bg-canvas: #21222c;
+  --bg-surface: #282a36;
+  --bg-surface-elevated: #343746;
+  --bg-surface-active: #44475a;
+  --border-subtle: #44475a;
+  --border-hover: #6272a4;
+  --border-focus: #bd93f9;
+  --text-primary: #f8f8f2;
+  --text-secondary: #c5c8d4;
+  --text-muted: #6272a4;
+  --accent-primary: #bd93f9;
+  --accent-hover: #a775f7;
+  --accent-foreground: #282a36;
+  --accent-subtle: rgba(189, 147, 249, 0.15);
+  --accent-border: rgba(189, 147, 249, 0.35);
+  --status-success: #50fa7b;
+  --status-success-bg: rgba(80, 250, 123, 0.12);
+  --status-success-border: rgba(80, 250, 123, 0.3);
+  --status-error: #ff5555;
+  --status-error-bg: rgba(255, 85, 85, 0.12);
+  --status-error-border: rgba(255, 85, 85, 0.3);
+}
+
+/* 4. GitHub Dark */
+[data-theme='github-dark'] {
+  --bg-canvas: #0d1117;
+  --bg-surface: #161b22;
+  --bg-surface-elevated: #21262d;
+  --bg-surface-active: #30363d;
+  --border-subtle: #30363d;
+  --border-hover: #484f58;
+  --border-focus: #58a6ff;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --accent-primary: #238636;
+  --accent-hover: #2ea043;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(35, 134, 54, 0.18);
+  --accent-border: rgba(56, 139, 253, 0.35);
+  --status-success: #3fb950;
+  --status-success-bg: rgba(63, 185, 80, 0.12);
+  --status-success-border: rgba(63, 185, 80, 0.3);
+  --status-error: #f85149;
+  --status-error-bg: rgba(248, 81, 73, 0.12);
+  --status-error-border: rgba(248, 81, 73, 0.3);
+}
+
+/* 5. Tokyo Night */
+[data-theme='tokyo-night'] {
+  --bg-canvas: #16161e;
+  --bg-surface: #1a1b26;
+  --bg-surface-elevated: #24283b;
+  --bg-surface-active: #2f3549;
+  --border-subtle: rgba(122, 162, 247, 0.12);
+  --border-hover: rgba(122, 162, 247, 0.25);
+  --border-focus: #7aa2f7;
+  --text-primary: #c0caf5;
+  --text-secondary: #9aa5ce;
+  --text-muted: #565f89;
+  --accent-primary: #7aa2f7;
+  --accent-hover: #89b4fa;
+  --accent-foreground: #1a1b26;
+  --accent-subtle: rgba(122, 162, 247, 0.15);
+  --accent-border: rgba(122, 162, 247, 0.35);
+  --status-success: #9ece6a;
+  --status-success-bg: rgba(158, 206, 106, 0.12);
+  --status-success-border: rgba(158, 206, 106, 0.3);
+  --status-error: #f7768e;
+  --status-error-bg: rgba(247, 118, 142, 0.12);
+  --status-error-border: rgba(247, 118, 142, 0.3);
+}
+
+/* 6. Monokai Pro */
+[data-theme='monokai-pro'] {
+  --bg-canvas: #221f22;
+  --bg-surface: #2d2a2e;
+  --bg-surface-elevated: #3a383b;
+  --bg-surface-active: #49464e;
+  --border-subtle: #403e41;
+  --border-hover: #727072;
+  --border-focus: #ffd866;
+  --text-primary: #fcfcfa;
+  --text-secondary: #c1c0c0;
+  --text-muted: #727072;
+  --accent-primary: #ffd866;
+  --accent-hover: #f5cb50;
+  --accent-foreground: #221f22;
+  --accent-subtle: rgba(255, 216, 102, 0.15);
+  --accent-border: rgba(255, 216, 102, 0.35);
+  --status-success: #a9dc76;
+  --status-success-bg: rgba(169, 220, 118, 0.12);
+  --status-success-border: rgba(169, 220, 118, 0.3);
+  --status-error: #ff6188;
+  --status-error-bg: rgba(255, 97, 136, 0.12);
+  --status-error-border: rgba(255, 97, 136, 0.3);
+}
+
+/* 7. Solarized Dark */
+[data-theme='solarized-dark'] {
+  --bg-canvas: #002b36;
+  --bg-surface: #073642;
+  --bg-surface-elevated: #094959;
+  --bg-surface-active: #0e5d71;
+  --border-subtle: rgba(38, 139, 210, 0.15);
+  --border-hover: rgba(42, 161, 152, 0.35);
+  --border-focus: #2aa198;
+  --text-primary: #93a1a1;
+  --text-secondary: #839496;
+  --text-muted: #586e75;
+  --accent-primary: #268bd2;
+  --accent-hover: #1a75b7;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(38, 139, 210, 0.15);
+  --accent-border: rgba(38, 139, 210, 0.35);
+  --status-success: #859900;
+  --status-success-bg: rgba(133, 153, 0, 0.12);
+  --status-success-border: rgba(133, 153, 0, 0.3);
+  --status-error: #dc322f;
+  --status-error-bg: rgba(220, 50, 47, 0.12);
+  --status-error-border: rgba(220, 50, 47, 0.3);
+}
+
+/* 8. Quiet Luxury (OLED Ultra Dark) */
+[data-theme='quiet-luxury'],
+[data-theme='dark'] {
+  --bg-canvas: #09090b;
+  --bg-surface: #111114;
+  --bg-surface-elevated: #18181c;
+  --bg-surface-active: #222228;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-focus: #3b82f6;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
   --accent-primary: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-foreground: #ffffff;
-  --accent-subtle: rgba(37, 99, 235, 0.08);
-  --accent-border: rgba(37, 99, 235, 0.22);
-
-  --status-success: #059669;
-  --status-success-bg: rgba(16, 185, 129, 0.08);
-  --status-success-border: rgba(16, 185, 129, 0.2);
-  --status-error: #dc2626;
-  --status-error-bg: rgba(239, 68, 68, 0.08);
-  --status-error-border: rgba(239, 68, 68, 0.2);
-
-  --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --accent-subtle: rgba(37, 99, 235, 0.12);
+  --accent-border: rgba(37, 99, 235, 0.3);
+  --status-success: #10b981;
+  --status-success-bg: rgba(16, 185, 129, 0.1);
+  --status-success-border: rgba(16, 185, 129, 0.25);
+  --status-error: #ef4444;
+  --status-error-bg: rgba(239, 68, 68, 0.1);
+  --status-error-border: rgba(239, 68, 68, 0.25);
 }
 
+/* ==========================================================================
+   VS Code High Contrast Theme
+   ========================================================================== */
+[data-theme='vscode-contrast'] {
+  --bg-canvas: #000000;
+  --bg-surface: #000000;
+  --bg-surface-elevated: #0f0f0f;
+  --bg-surface-active: #1c1c1c;
+  --border-subtle: #6fc3df;
+  --border-hover: #ffffff;
+  --border-focus: #f38518;
+  --text-primary: #ffffff;
+  --text-secondary: #00ffff;
+  --text-muted: #888888;
+  --accent-primary: #f38518;
+  --accent-hover: #ff9d3b;
+  --accent-foreground: #000000;
+  --accent-subtle: rgba(243, 133, 24, 0.18);
+  --accent-border: #f38518;
+  --status-success: #89d185;
+  --status-success-bg: rgba(137, 209, 133, 0.18);
+  --status-success-border: #89d185;
+  --status-error: #f48771;
+  --status-error-bg: rgba(244, 135, 113, 0.18);
+  --status-error-border: #f48771;
+}
+
+/* ==========================================================================
+   Custom AI HUD & Sci-Fi Themes
+   ========================================================================== */
+
+/* J.A.R.V.I.S. (Stark Arc Reactor AI) */
+[data-theme='jarvis'] {
+  --bg-canvas: #020712;
+  --bg-surface: #051024;
+  --bg-surface-elevated: #0a1b38;
+  --bg-surface-active: #102952;
+  --border-subtle: rgba(0, 229, 255, 0.18);
+  --border-hover: rgba(0, 229, 255, 0.4);
+  --border-focus: #00e5ff;
+  --text-primary: #e0f7fa;
+  --text-secondary: #80deea;
+  --text-muted: #3a758c;
+  --accent-primary: #00e5ff;
+  --accent-hover: #33ebff;
+  --accent-foreground: #020712;
+  --accent-subtle: rgba(0, 229, 255, 0.14);
+  --accent-border: rgba(0, 229, 255, 0.38);
+  --status-success: #00e676;
+  --status-success-bg: rgba(0, 230, 118, 0.12);
+  --status-success-border: rgba(0, 230, 118, 0.3);
+  --status-error: #ff1744;
+  --status-error-bg: rgba(255, 23, 68, 0.12);
+  --status-error-border: rgba(255, 23, 68, 0.3);
+}
+
+/* E.D.I.T.H. (Tony Stark Tactical Smart-Glasses AI) */
+[data-theme='edith'] {
+  --bg-canvas: #050811;
+  --bg-surface: #0b1020;
+  --bg-surface-elevated: #121a30;
+  --bg-surface-active: #1a2644;
+  --border-subtle: rgba(56, 189, 248, 0.18);
+  --border-hover: rgba(56, 189, 248, 0.4);
+  --border-focus: #38bdf8;
+  --text-primary: #f0f9ff;
+  --text-secondary: #7dd3fc;
+  --text-muted: #3d5e80;
+  --accent-primary: #38bdf8;
+  --accent-hover: #60a5fa;
+  --accent-foreground: #050811;
+  --accent-subtle: rgba(56, 189, 248, 0.14);
+  --accent-border: rgba(245, 158, 11, 0.45);
+  --status-success: #34d399;
+  --status-success-bg: rgba(52, 211, 153, 0.12);
+  --status-success-border: rgba(52, 211, 153, 0.3);
+  --status-error: #f43f5e;
+  --status-error-bg: rgba(244, 63, 94, 0.12);
+  --status-error-border: rgba(244, 63, 94, 0.3);
+}
+
+/* F.R.I.D.A.Y. (Irish Tech AI) */
+[data-theme='friday'] {
+  --bg-canvas: #060e14;
+  --bg-surface: #0b1722;
+  --bg-surface-elevated: #102130;
+  --bg-surface-active: #173044;
+  --border-subtle: rgba(0, 230, 118, 0.18);
+  --border-hover: rgba(0, 230, 118, 0.38);
+  --border-focus: #00e676;
+  --text-primary: #e8f5e9;
+  --text-secondary: #81c784;
+  --text-muted: #386b57;
+  --accent-primary: #00e676;
+  --accent-hover: #33eb91;
+  --accent-foreground: #060e14;
+  --accent-subtle: rgba(0, 230, 118, 0.14);
+  --accent-border: rgba(0, 230, 118, 0.35);
+  --status-success: #00e676;
+  --status-success-bg: rgba(0, 230, 118, 0.12);
+  --status-success-border: rgba(0, 230, 118, 0.3);
+  --status-error: #ff5252;
+  --status-error-bg: rgba(255, 82, 82, 0.12);
+  --status-error-border: rgba(255, 82, 82, 0.3);
+}
+
+/* Spider-Man Suit AI (Karen / E.T. AI) */
+[data-theme='spider-ai'] {
+  --bg-canvas: #070a14;
+  --bg-surface: #0e1322;
+  --bg-surface-elevated: #171e33;
+  --bg-surface-active: #222b46;
+  --border-subtle: rgba(14, 165, 233, 0.2);
+  --border-hover: rgba(239, 68, 68, 0.45);
+  --border-focus: #ef4444;
+  --text-primary: #f8fafc;
+  --text-secondary: #93c5fd;
+  --text-muted: #4f637d;
+  --accent-primary: #ef4444;
+  --accent-hover: #dc2626;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(239, 68, 68, 0.15);
+  --accent-border: rgba(14, 165, 233, 0.45);
+  --status-success: #10b981;
+  --status-success-bg: rgba(16, 185, 129, 0.12);
+  --status-success-border: rgba(16, 185, 129, 0.3);
+  --status-error: #ef4444;
+  --status-error-bg: rgba(239, 68, 68, 0.12);
+  --status-error-border: rgba(239, 68, 68, 0.3);
+}
+
+/* Ultron (Vibranium Core) */
+[data-theme='ultron'] {
+  --bg-canvas: #0b0407;
+  --bg-surface: #14080e;
+  --bg-surface-elevated: #1f0c15;
+  --bg-surface-active: #2e1220;
+  --border-subtle: rgba(255, 23, 68, 0.2);
+  --border-hover: rgba(255, 23, 68, 0.45);
+  --border-focus: #ff1744;
+  --text-primary: #ffebee;
+  --text-secondary: #ef9a9a;
+  --text-muted: #853742;
+  --accent-primary: #ff1744;
+  --accent-hover: #ff4569;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(255, 23, 68, 0.18);
+  --accent-border: rgba(255, 23, 68, 0.45);
+  --status-success: #ff9100;
+  --status-success-bg: rgba(255, 145, 0, 0.12);
+  --status-success-border: rgba(255, 145, 0, 0.3);
+  --status-error: #d50000;
+  --status-error-bg: rgba(213, 0, 0, 0.15);
+  --status-error-border: rgba(213, 0, 0, 0.35);
+}
+
+/* Matrix Phosphor (Hacker) */
+[data-theme='hacker'] {
+  --bg-canvas: #030804;
+  --bg-surface: #071208;
+  --bg-surface-elevated: #0d1e0f;
+  --bg-surface-active: #132d16;
+  --border-subtle: rgba(0, 255, 102, 0.2);
+  --border-hover: rgba(0, 255, 102, 0.45);
+  --border-focus: #00ff66;
+  --text-primary: #00ff66;
+  --text-secondary: #00cc52;
+  --text-muted: #287a3e;
+  --accent-primary: #00ff66;
+  --accent-hover: #33ff85;
+  --accent-foreground: #030804;
+  --accent-subtle: rgba(0, 255, 102, 0.15);
+  --accent-border: rgba(0, 255, 102, 0.4);
+  --status-success: #00ff66;
+  --status-success-bg: rgba(0, 255, 102, 0.12);
+  --status-success-border: rgba(0, 255, 102, 0.3);
+  --status-error: #ff3344;
+  --status-error-bg: rgba(255, 51, 68, 0.15);
+  --status-error-border: rgba(255, 51, 68, 0.3);
+}
+
+/* ==========================================================================
+   VS Code Light Themes
+   ========================================================================== */
+
+/* 9. VS Code Light+ */
+[data-theme='light-plus'],
+[data-theme='light'] {
+  --bg-canvas: #f3f3f3;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #e8e8e8;
+  --bg-surface-active: #dedede;
+  --border-subtle: #e5e5e5;
+  --border-hover: #cccccc;
+  --border-focus: #005fb8;
+  --text-primary: #1e1e1e;
+  --text-secondary: #616161;
+  --text-muted: #8a8a8a;
+  --accent-primary: #005fb8;
+  --accent-hover: #004c94;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(0, 95, 184, 0.08);
+  --accent-border: rgba(0, 95, 184, 0.25);
+  --status-success: #388a34;
+  --status-success-bg: rgba(56, 138, 52, 0.08);
+  --status-success-border: rgba(56, 138, 52, 0.2);
+  --status-error: #e51400;
+  --status-error-bg: rgba(229, 20, 0, 0.08);
+  --status-error-border: rgba(229, 20, 0, 0.2);
+  --shadow-dropdown: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* 10. GitHub Light */
+[data-theme='github-light'] {
+  --bg-canvas: #f6f8fa;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f3f5;
+  --bg-surface-active: #e5e7eb;
+  --border-subtle: #d0d7de;
+  --border-hover: #afb8c1;
+  --border-focus: #0969da;
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8c959f;
+  --accent-primary: #0969da;
+  --accent-hover: #0858b7;
+  --accent-foreground: #ffffff;
+  --accent-subtle: rgba(9, 105, 218, 0.08);
+  --accent-border: rgba(9, 105, 218, 0.25);
+  --status-success: #1a7f37;
+  --status-success-bg: rgba(26, 127, 55, 0.08);
+  --status-success-border: rgba(26, 127, 55, 0.2);
+  --status-error: #cf222e;
+  --status-error-bg: rgba(207, 34, 46, 0.08);
+  --status-error-border: rgba(207, 34, 46, 0.2);
+  --shadow-dropdown: 0 10px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* ==========================================================================
+   Global Reset & Defaults
+   ========================================================================== */
 *,
 *::before,
 *::after {
@@ -86,9 +505,23 @@ body,
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 150ms var(--ease-snappy), color 150ms var(--ease-snappy);
 }
 
-button,
+button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 input,
 textarea {
   font-family: inherit;
